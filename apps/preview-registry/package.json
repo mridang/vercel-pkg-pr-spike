@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Per-PR snapshot npm registry deployed to Vercel (no external storage).",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "tsx scripts/local-server.ts",
     "stage:local": "tsx scripts/stage-local.ts",
