@@ -25,12 +25,19 @@ const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"
  * Compute the canonical origin (`scheme://host`) the registry should
  * advertise in install commands for the current request.
  *
- * Localhost connections are served over `http`; any other host is
- * assumed to be a Vercel deploy reachable over `https`.
+ * The scheme comes from the `x-forwarded-proto` header when present —
+ * Vercel and most reverse proxies set it, so production deploys
+ * correctly advertise `https`. Without that header the request reached
+ * the Node server directly (local dev, including via a LAN IP or dev
+ * proxy hostname), so we default to `http` rather than guessing `https`
+ * from the host and printing an unreachable registry URL.
  */
-const originForHost = (hostHeader: string | undefined): string => {
+const originForHost = (
+  hostHeader: string | undefined,
+  forwardedProto: string | undefined,
+): string => {
   const host = hostHeader ?? "localhost";
-  const scheme = host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https";
+  const scheme = forwardedProto?.split(",")[0]?.trim() || "http";
   return `${scheme}://${host}`;
 };
 
@@ -40,6 +47,22 @@ const originForHost = (hostHeader: string | undefined): string => {
  * {@link FALLBACK_BRANCH} for local dev.
  */
 const branchForDeploy = (): string => process.env.VERCEL_GIT_COMMIT_REF ?? FALLBACK_BRANCH;
+
+/**
+ * Reject blob keys that could escape the snapshot storage root.
+ *
+ * A legitimate tarball key is always a relative `@scope/name/-/file.tgz`
+ * path. An empty key, an absolute path, a Windows drive prefix, or any
+ * `..` traversal segment indicates an attempt to read outside
+ * `.snapshots` (eg the function bundle itself) and is refused before
+ * the key ever reaches the filesystem store.
+ */
+const isSafeBlobKey = (key: string): boolean => {
+  if (key.length === 0) return false;
+  if (key.startsWith("/") || key.startsWith("\\")) return false;
+  if (/^[a-zA-Z]:/.test(key)) return false;
+  return !key.split(/[/\\]/).includes("..");
+};
 
 /**
  * Construct the Hono app that implements the npm registry protocol on
@@ -84,18 +107,33 @@ export const createApp = (store: BlobStore) => {
   // (written by scripts/publish-on-deploy.ts), so this Hono route is only
   // reached during local dev where there is no static serving layer.
   app.get("/", (context) => {
-    const origin = originForHost(context.req.header("host"));
+    const origin = originForHost(
+      context.req.header("host"),
+      context.req.header("x-forwarded-proto"),
+    );
     return context.html(renderLanding(SNAPSHOT_PACKAGES, origin, branchForDeploy()));
   });
 
   app.get("/-/blob/*", async (context) => {
-    const key = decodeURIComponent(context.req.path.replace(/^\/-\/blob\//, ""));
+    // decodeURIComponent throws on malformed percent-encoding (eg
+    // `%E0%A4%A`); treat that as a miss rather than letting it bubble to
+    // the 500 handler.
+    let key: string;
+    try {
+      key = decodeURIComponent(context.req.path.replace(/^\/-\/blob\//, ""));
+    } catch {
+      return context.json({ error: "not found" }, 404);
+    }
+    if (!isSafeBlobKey(key)) {
+      return context.json({ error: "not found" }, 404);
+    }
     try {
       const tarball = await store.read(key);
-      const copy = new Uint8Array(tarball.byteLength);
-      copy.set(tarball);
-      context.header("Content-Type", "application/octet-stream");
-      return context.body(copy);
+      // Return the Buffer directly as the Response body — it's already a
+      // valid BodyInit, so there's no extra O(n) copy per download.
+      return new Response(tarball, {
+        headers: { "Content-Type": "application/octet-stream" },
+      });
     } catch {
       return context.json({ error: "not found" }, 404);
     }
@@ -113,7 +151,14 @@ export const createApp = (store: BlobStore) => {
   });
 
   app.get("/:full{@[^/]+%2[Ff][^/]+}", async (context) => {
-    const decoded = decodeURIComponent(context.req.param("full"));
+    // Malformed percent-encoding makes decodeURIComponent throw; surface
+    // it as a 400 bad path instead of a 500.
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(context.req.param("full"));
+    } catch {
+      return context.json({ error: "bad path" }, 400);
+    }
     const [scope, name] = decoded.split("/");
     if (!scope || !name) return context.json({ error: "bad path" }, 400);
     const packument = await buildPackument(store, scope, name);
@@ -123,16 +168,20 @@ export const createApp = (store: BlobStore) => {
   });
 
   app.notFound((context) => context.json({ error: "not found", path: context.req.path }, 404));
-  app.onError((error, context) =>
-    context.json(
+  app.onError((error, context) => {
+    // Stack traces can expose internal file paths and source snippets,
+    // so only attach them outside production. Production responses carry
+    // just the message and the requested path.
+    const includeStack = process.env.VERCEL_ENV !== "production";
+    return context.json(
       {
         error: error.message,
         path: context.req.path,
-        stack: error.stack,
+        ...(includeStack ? { stack: error.stack } : {}),
       },
       500,
-    ),
-  );
+    );
+  });
 
   return app;
 };

@@ -1,5 +1,5 @@
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 
 /**
  * One entry returned by {@link BlobStore.list} or {@link BlobStore.put}.
@@ -64,9 +64,22 @@ const walkDirectory = async (rootDirectory: string): Promise<readonly string[]> 
 export const createFsStore = (storageRoot: string, publicBase: string): BlobStore => {
   const toUrl = (key: string): string => `${publicBase}/-/blob/${encodeURI(key)}`;
 
+  // Defense-in-depth against path traversal: resolve every key against
+  // the storage root and refuse anything that lands outside it. The
+  // HTTP layer already rejects `..` keys, but the store is the last
+  // line so a future caller cannot accidentally read arbitrary files.
+  const resolvedRoot = resolve(storageRoot);
+  const resolveWithinRoot = (key: string): string => {
+    const resolved = resolve(storageRoot, key);
+    if (resolved !== resolvedRoot && !resolved.startsWith(resolvedRoot + sep)) {
+      throw new Error(`key escapes storage root: ${key}`);
+    }
+    return resolved;
+  };
+
   return {
     put: async (key, body, _contentType) => {
-      const destination = join(storageRoot, key);
+      const destination = resolveWithinRoot(key);
       await mkdir(dirname(destination), { recursive: true });
       await writeFile(destination, body);
       return {
@@ -81,7 +94,12 @@ export const createFsStore = (storageRoot: string, publicBase: string): BlobStor
       const allFiles = await walkDirectory(storageRoot);
       const matched = await Promise.all(
         allFiles.map(async (fullPath): Promise<BlobEntry | null> => {
-          const key = fullPath.slice(storageRoot.length + 1);
+          // Blob keys are always POSIX-style (`@scope/name/-/file.tgz`),
+          // but the filesystem path uses the platform separator — on
+          // Windows that would be `\`, which downstream prefix matching
+          // and URL generation do not expect. Normalize to forward slashes.
+          const relativePath = fullPath.slice(storageRoot.length + 1);
+          const key = relativePath.split(sep).join("/");
           if (!key.startsWith(prefix)) return null;
           const info = await stat(fullPath);
           return {
@@ -95,6 +113,6 @@ export const createFsStore = (storageRoot: string, publicBase: string): BlobStor
       return matched.filter((entry): entry is BlobEntry => entry !== null);
     },
 
-    read: async (key) => readFile(join(storageRoot, key)),
+    read: async (key) => readFile(resolveWithinRoot(key)),
   };
 };

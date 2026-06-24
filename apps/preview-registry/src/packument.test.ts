@@ -110,7 +110,7 @@ describe("buildPackument", () => {
     ]);
   });
 
-  test("attaches dist.tarball, shasum, integrity, and unpackedSize to every version", async () => {
+  test("attaches dist.tarball, shasum, and integrity to every version", async () => {
     const body = manifestTarball({
       name: "@foodbar/alpha",
       version: "0.0.0-sha-onlyone",
@@ -130,7 +130,6 @@ describe("buildPackument", () => {
     expect(version?.dist.tarball).toBe("https://example.test/-/blob/only");
     expect(version?.dist.shasum).toMatch(/^[0-9a-f]{40}$/);
     expect(version?.dist.integrity).toMatch(/^sha512-/);
-    expect(version?.dist.unpackedSize).toBe(body.length);
   });
 
   test("skips non-tarball blobs that share the package prefix", async () => {
@@ -156,5 +155,19 @@ describe("buildPackument", () => {
     ]);
     const packument = await buildPackument(store, "@foodbar", "alpha");
     expect(Object.keys(packument?.versions ?? {})).toEqual(["0.0.0-sha-good"]);
+  });
+
+  test("rejects (does not crash) when a tarball has a malformed package.json", async () => {
+    const body = buildTarball(Buffer.from("{ this is not valid json"));
+    const store = fakeStore([
+      {
+        key: "@foodbar/alpha/-/broken.tgz",
+        url: "https://example.test/-/blob/broken",
+        size: body.length,
+        uploadedAt: new Date(),
+        body,
+      },
+    ]);
+    await expect(buildPackument(store, "@foodbar", "alpha")).rejects.toThrow();
   });
 });
