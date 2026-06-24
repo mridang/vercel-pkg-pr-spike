@@ -51,6 +51,9 @@ export const createApp = (store: BlobStore) => {
     return context.body(ROBOTS_TXT)
   })
 
+  // Note: '/' is served as a STATIC file from apps/preview-registry/public/
+  // (written by scripts/publish-on-deploy.ts), so this Hono route is only
+  // reached during local dev where there is no static serving layer.
   app.get('/', (context) => {
     const origin = originForHost(context.req.header('host'))
     return context.html(

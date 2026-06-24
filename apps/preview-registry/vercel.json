@@ -8,6 +8,6 @@
     }
   },
   "rewrites": [
-    { "source": "/:path*", "destination": "/api/registry" }
+    { "source": "/(.+)", "destination": "/api/registry" }
   ]
 }

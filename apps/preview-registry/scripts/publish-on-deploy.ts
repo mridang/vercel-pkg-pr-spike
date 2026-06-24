@@ -9,6 +9,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { renderLanding } from '../src/landing.js'
 
 /**
  * Dependency field names a workspace package may declare a sibling
@@ -173,8 +174,20 @@ const publishOnDeploy = async (): Promise<void> => {
       JSON.stringify(bundled, null, 2) +
       ' as const\n'
     writeFileSync(manifestPath, manifestSource)
+
+    const publicDirectory = join(APP_ROOT, 'public')
+    mkdirSync(publicDirectory, { recursive: true })
+    const origin = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000'
+    const branch = process.env.VERCEL_GIT_COMMIT_REF ?? 'main'
+    writeFileSync(
+      join(publicDirectory, 'index.html'),
+      renderLanding(bundled, origin, branch),
+    )
+
     console.log(
-      `\nbundled ${bundled.length} snapshot(s) into ${SNAPSHOT_ROOT}, wrote manifest ${manifestPath}`,
+      `\nbundled ${bundled.length} snapshot(s) into ${SNAPSHOT_ROOT}, wrote manifest ${manifestPath}, wrote public/index.html`,
     )
   } finally {
     restoreOriginals(stamped)
