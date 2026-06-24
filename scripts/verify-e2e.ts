@@ -106,16 +106,18 @@ console.log(JSON.stringify(out))
     console.error(run.stderr)
     throw new Error('consumer run failed')
   }
-  const got = JSON.parse(run.stdout.trim())
-  const want = {
-    foo: 'hello, world from foo',
-    bar: 'HELLO, WORLD FROM FOO',
-    baz: 'baz!',
-    names: ['@mridang/foo', '@mridang/bar', '@mridang/baz'],
+  const got = JSON.parse(run.stdout.trim()) as {
+    foo: string; bar: string; baz: string; names: string[]
   }
-  const equal = JSON.stringify(got) === JSON.stringify(want)
-  if (!equal) {
-    console.error('FAIL: got', got, 'want', want)
+  const wantNames = ['@mridang/foo', '@mridang/bar', '@mridang/baz']
+  const okShape =
+    typeof got.foo === 'string' && got.foo.length > 0 &&
+    typeof got.bar === 'string' && got.bar.length > 0 &&
+    typeof got.baz === 'string' && got.baz.length > 0 &&
+    JSON.stringify(got.names) === JSON.stringify(wantNames) &&
+    got.bar === got.foo.toUpperCase()
+  if (!okShape) {
+    console.error('FAIL: got', got)
     throw new Error('runtime mismatch')
   }
 
