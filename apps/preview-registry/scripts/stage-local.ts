@@ -3,14 +3,6 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-/**
- * Workspace package directories the local stage script will pack.
- *
- * Kept in sync with `packages/*` by convention; if you add a package
- * to the workspace, extend this list.
- */
-const WORKSPACE_PACKAGES = ["packages/foo", "packages/bar", "packages/baz"] as const;
-
 /** Absolute path to `apps/preview-registry/`. */
 const APP_ROOT = resolve(import.meta.dirname, "..");
 
@@ -23,23 +15,53 @@ const SNAPSHOT_ROOT = join(APP_ROOT, ".snapshots");
 interface WorkspaceManifest {
   readonly name: string;
   readonly version: string;
+  readonly private?: boolean;
 }
+
+/**
+ * Discover every publishable workspace package directory under
+ * `packages/`.
+ *
+ * Mirrors `scripts/publish-on-deploy.ts` exactly — directories without
+ * a `package.json` or flagged `private: true` are skipped — so the
+ * local round-trip stages precisely the set the production build
+ * publishes, and the list can never drift from what actually exists in
+ * the repo.
+ */
+const listPublishablePackageDirectories = (): readonly string[] =>
+  readdirSync(join(REPO_ROOT, "packages"))
+    .map((entry) => `packages/${entry}`)
+    .filter((packageDirectory) => {
+      try {
+        const packageJsonPath = join(REPO_ROOT, packageDirectory, "package.json");
+        if (!readdirSync(join(REPO_ROOT, packageDirectory)).includes("package.json")) {
+          return false;
+        }
+        const manifest = JSON.parse(readFileSync(packageJsonPath, "utf8")) as WorkspaceManifest;
+        return manifest.private !== true;
+      } catch {
+        return false;
+      }
+    });
 
 /**
  * Pack every workspace package into the local FS snapshot store so the
  * dev server has something to serve.
  *
  * Mirrors the shape of what
- * {@link ../api/index.ts | the Vercel function bundle} ships in
- * production, just without version stamping — packages keep their
- * checked-in `0.0.0` so iterating on schema or routing is fast.
+ * {@link ../api/registry.ts | the Vercel function bundle} ships in
+ * production, but skips the snapshot version-stamping step — each
+ * package keeps whatever version is currently in its package.json,
+ * so iterating on schema or routing locally is fast.
  */
 const stageLocal = async (): Promise<void> => {
   rmSync(SNAPSHOT_ROOT, { recursive: true, force: true });
 
+  const packageDirectories = listPublishablePackageDirectories();
+
   const stagingDirectory = mkdtempSync(join(tmpdir(), "stage-local-"));
   try {
-    for (const packageDirectory of WORKSPACE_PACKAGES) {
+    for (const packageDirectory of packageDirectories) {
       console.log(`packing ${packageDirectory}`);
       execFileSync("corepack", ["pnpm", "pack", "--pack-destination", stagingDirectory], {
         cwd: join(REPO_ROOT, packageDirectory),
@@ -48,7 +70,7 @@ const stageLocal = async (): Promise<void> => {
     }
 
     const manifests: readonly { path: string; manifest: WorkspaceManifest }[] =
-      WORKSPACE_PACKAGES.map((packageDirectory) => {
+      packageDirectories.map((packageDirectory) => {
         const packageJsonPath = join(REPO_ROOT, packageDirectory, "package.json");
         return {
           path: packageJsonPath,
@@ -94,7 +116,7 @@ const stageLocal = async (): Promise<void> => {
     writeFileSync(manifestPath, manifestSource);
 
     console.log(`\nstaged into ${SNAPSHOT_ROOT}`);
-    console.log("now run:  corepack pnpm dev:registry");
+    console.log("now run:  corepack pnpm dev");
   } finally {
     rmSync(stagingDirectory, { recursive: true, force: true });
   }
