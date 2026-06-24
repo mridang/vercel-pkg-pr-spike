@@ -23,11 +23,19 @@ const DEPENDENCY_FIELDS = [
   'optionalDependencies',
 ] as const
 
+/** Absolute path to `apps/preview-registry/`. */
 const APP_ROOT = resolve(import.meta.dirname, '..')
+
+/** Absolute path to the workspace root that owns `packages/*`. */
 const REPO_ROOT = resolve(APP_ROOT, '..', '..')
+
+/** Output directory the function bundle ships via `vercel.json#functions.includeFiles`. */
 const SNAPSHOT_ROOT = join(APP_ROOT, '.snapshots')
 
+/** Short commit identifier baked into every published snapshot version. */
 const commitSha = (process.env.VERCEL_GIT_COMMIT_SHA ?? '').slice(0, 7)
+
+/** SemVer pre-release tag every workspace package is republished under for this deploy. */
 const SNAPSHOT_VERSION = `0.0.0-sha-${commitSha || 'localdev'}`
 
 /**
@@ -50,6 +58,13 @@ interface MutablePackageJson {
   [key: string]: unknown
 }
 
+/**
+ * Discover every workspace package directory under `packages/`.
+ *
+ * Filters out anything that isn't actually a package (no
+ * `package.json`) so stray files or symlinks don't break the pack
+ * loop.
+ */
 const listPackageDirectories = (): readonly string[] =>
   readdirSync(join(REPO_ROOT, 'packages'))
     .map((entry) => `packages/${entry}`)
@@ -93,12 +108,20 @@ const stampPackage = (packageDirectory: string): StampedPackage => {
   }
 }
 
+/**
+ * Restore every stamped `package.json` to the bytes that were on disk
+ * before {@link stampPackage} rewrote it.
+ */
 const restoreOriginals = (stamped: readonly StampedPackage[]): void => {
   for (const { packageJsonPath, originalContent } of stamped) {
     writeFileSync(packageJsonPath, originalContent)
   }
 }
 
+/**
+ * Filename prefix pnpm uses for a packed tarball of `packageName`.
+ * `@scope/name` → `scope-name-`, so `scope-name-1.0.0.tgz` matches it.
+ */
 const tarballPrefixFor = (packageName: string): string =>
   packageName.replace('@', '').replace('/', '-') + '-'
 

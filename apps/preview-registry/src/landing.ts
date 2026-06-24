@@ -13,6 +13,7 @@ export interface PackageRow {
   readonly sizeBytes: number
 }
 
+/** Character-to-entity table used by {@link escapeHtml}. */
 const HTML_ESCAPE_MAP = {
   '&': '&amp;',
   '<': '&lt;',
@@ -21,8 +22,10 @@ const HTML_ESCAPE_MAP = {
   "'": '&#39;',
 } as const
 
+/** Regex matching any character that requires HTML entity encoding. */
 const HTML_ESCAPE_PATTERN = /[&<>"']/g
 
+/** Encode `&`, `<`, `>`, `"`, `'` as HTML entities so user-supplied strings cannot break the document. */
 const escapeHtml = (input: string): string =>
   input.replace(
     HTML_ESCAPE_PATTERN,
@@ -30,6 +33,10 @@ const escapeHtml = (input: string): string =>
       HTML_ESCAPE_MAP[character as keyof typeof HTML_ESCAPE_MAP] ?? character,
   )
 
+/**
+ * Regex matching a snapshot tarball blob key. Captures the npm package
+ * name in group 1 and the tarball filename (without `.tgz`) in group 2.
+ */
 const TARBALL_KEY_PATTERN = /^(@[^/]+\/[^/]+)\/-\/(.+)\.tgz$/
 
 /**

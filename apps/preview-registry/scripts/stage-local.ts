@@ -22,8 +22,13 @@ const WORKSPACE_PACKAGES = [
   'packages/baz',
 ] as const
 
+/** Absolute path to `apps/preview-registry/`. */
 const APP_ROOT = resolve(import.meta.dirname, '..')
+
+/** Absolute path to the workspace root that owns `packages/*`. */
 const REPO_ROOT = resolve(APP_ROOT, '..', '..')
+
+/** Directory the local server reads tarballs out of — same layout as the prod build. */
 const SNAPSHOT_ROOT = join(APP_ROOT, '.snapshots')
 
 interface WorkspaceManifest {

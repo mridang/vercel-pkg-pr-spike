@@ -14,8 +14,13 @@ const WORKSPACE_PACKAGES = [
   'packages/baz',
 ] as const
 
+/** Absolute path to the workspace root that owns `packages/*`. */
 const REPO_ROOT = resolve(import.meta.dirname, '..')
+
+/** TCP port the local Hono server binds to during the test run. */
 const PORT = Number(process.env.PORT ?? 3000)
+
+/** Origin the throwaway consumer project points its npm registry at. */
 const REGISTRY = `http://localhost:${PORT}`
 
 /** Stylised log prefix so verify output stands out from child process output. */
@@ -60,6 +65,7 @@ interface ConsumerOutput {
   readonly names: readonly string[]
 }
 
+/** Compile every workspace package's TypeScript so `pnpm pack` has dist output to ship. */
 const buildWorkspacePackages = (): void => {
   for (const packageDirectory of WORKSPACE_PACKAGES) {
     const result = spawnSync(
@@ -73,6 +79,7 @@ const buildWorkspacePackages = (): void => {
   }
 }
 
+/** Pack and upload every workspace package into the local FS blob store. */
 const stageWorkspaceSnapshots = (): void => {
   const result = spawnSync(
     'corepack',
@@ -86,6 +93,10 @@ const stageWorkspaceSnapshots = (): void => {
   if (result.status !== 0) throw new Error('staging failed')
 }
 
+/**
+ * Scaffold a throwaway consumer project that resolves
+ * `@mridang/*` packages against the local registry.
+ */
 const writeConsumerProject = (consumerDirectory: string): void => {
   mkdirSync(consumerDirectory, { recursive: true })
   writeFileSync(
@@ -111,6 +122,11 @@ console.log(JSON.stringify(output))
   )
 }
 
+/**
+ * Parse the consumer project's stdout and fail the script if any
+ * field is missing, empty, or mis-shaped. Content-agnostic so the
+ * check survives PRs that legitimately change package output.
+ */
 const assertConsumerOutput = (raw: string): void => {
   const parsed = JSON.parse(raw.trim()) as ConsumerOutput
   const expectedNames = ['@mridang/foo', '@mridang/bar', '@mridang/baz']

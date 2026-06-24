@@ -35,6 +35,11 @@ const originForHost = (hostHeader: string | undefined): string => {
   return `${scheme}://${host}`
 }
 
+/**
+ * Resolve the git branch name displayed on the landing page. Reads
+ * Vercel's injected env var when present, otherwise falls back to
+ * {@link FALLBACK_BRANCH} for local dev.
+ */
 const branchForDeploy = (): string =>
   process.env.VERCEL_GIT_COMMIT_REF ?? FALLBACK_BRANCH
 

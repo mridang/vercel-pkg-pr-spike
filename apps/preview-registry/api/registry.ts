@@ -22,12 +22,22 @@ const resolveFunctionDirectory = (): string => {
   }
 }
 
+/**
+ * Absolute path to the snapshot bundle the Vercel build shipped with
+ * this function. The build's `includeFiles` rule places `.snapshots/`
+ * next to the function file, so it resolves one directory above.
+ */
 const SNAPSHOT_ROOT = resolve(resolveFunctionDirectory(), '..', '.snapshots')
 
+/**
+ * URL prefix the registry advertises in tarball download URLs at
+ * runtime. Vercel sets `VERCEL_URL` to the per-deploy hostname.
+ */
 const PUBLIC_BASE = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
   : ''
 
+/** Hono app instance — constructed once at module load, reused per request. */
 const app = createApp(createFsStore(SNAPSHOT_ROOT, PUBLIC_BASE))
 
 /**
