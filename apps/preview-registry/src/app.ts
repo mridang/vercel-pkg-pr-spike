@@ -22,8 +22,11 @@ export const createApp = (store: BlobStore) => {
     const key = decodeURIComponent(c.req.path.replace(/^\/-\/blob\//, ''))
     try {
       const buf = await store.read(key)
+      // Hono's c.body() typings don't accept Node's Buffer directly; an
+      // ArrayBuffer view of the same bytes does (and avoids a copy).
+      const view = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength)
       c.header('Content-Type', 'application/octet-stream')
-      return c.body(buf)
+      return c.body(view)
     } catch {
       return c.json({ error: 'not found' }, 404)
     }
