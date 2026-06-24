@@ -8,8 +8,6 @@ import { handle } from 'hono/vercel'
 import { createApp } from '../src/app.js'
 import { createFsStore } from '../src/storage.js'
 
-export const config = { runtime: 'nodejs22.x' }
-
 const SNAPSHOT_ROOT = resolve(import.meta.dirname, '..', '.snapshots')
 const PUBLIC_BASE = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
