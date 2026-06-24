@@ -1,0 +1,10 @@
+node_modules
+.devbox
+dist
+.vercel
+.env
+.env.local
+.local-pack
+.local-blob
+*.tgz
+.moon/cache

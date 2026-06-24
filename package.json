@@ -1,0 +1,21 @@
+{
+  "name": "@mridang/spike-root",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Per-PR npm registry spike on Vercel (mirrors zitadel/nextgen scaffolding).",
+  "license": "MIT",
+  "scripts": {
+    "stage:local": "tsx apps/preview-registry/scripts/stage-local.ts",
+    "dev:registry": "tsx apps/preview-registry/scripts/local-server.ts",
+    "verify": "tsx scripts/verify-e2e.ts"
+  },
+  "devDependencies": {
+    "@moonrepo/cli": "^1.30.0",
+    "@types/node": "catalog:",
+    "@vercel/blob": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  },
+  "packageManager": "pnpm@10.33.2+sha256.7a7bcf13d7f6ceb3946c03978373d99be9fde1cafc3000bdfed4c4f791167610"
+}

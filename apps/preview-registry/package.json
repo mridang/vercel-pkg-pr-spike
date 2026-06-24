@@ -1,0 +1,23 @@
+{
+  "name": "@mridang/preview-registry",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Per-PR snapshot npm registry deployed to Vercel.",
+  "scripts": {
+    "dev": "tsx scripts/local-server.ts",
+    "stage:local": "tsx scripts/stage-local.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@vercel/blob": "catalog:",
+    "hono": "catalog:",
+    "tar": "catalog:"
+  },
+  "devDependencies": {
+    "@hono/node-server": "catalog:",
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  }
+}

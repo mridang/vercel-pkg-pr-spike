@@ -1,0 +1,14 @@
+projects:
+  workspace: "."
+  foo: "packages/foo"
+  bar: "packages/bar"
+  baz: "packages/baz"
+  preview-registry: "apps/preview-registry"
+
+vcs:
+  defaultBranch: "main"
+
+pipeline:
+  installDependencies: false
+
+telemetry: false

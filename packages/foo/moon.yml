@@ -1,0 +1,14 @@
+id: "foo"
+language: "typescript"
+layer: "library"
+
+tasks:
+  build:
+    command: "corepack pnpm run build"
+    outputs:
+      - "dist/**/*"
+
+  pack:
+    command: "corepack pnpm pack --pack-destination=$workspaceRoot/.local-pack"
+    deps:
+      - "~:build"
