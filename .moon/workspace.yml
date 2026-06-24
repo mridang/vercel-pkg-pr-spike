@@ -4,6 +4,7 @@ projects:
   bar: "packages/bar"
   baz: "packages/baz"
   preview-registry: "apps/preview-registry"
+  hello: "apps/hello"
 
 vcs:
   defaultBranch: "main"

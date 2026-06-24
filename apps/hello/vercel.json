@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "corepack enable && cd ../.. && pnpm install --frozen-lockfile --prod=false",
+  "buildCommand": "echo 'no build step'",
+  "rewrites": [
+    { "source": "/(.+)", "destination": "/api/hello" }
+  ]
+}
