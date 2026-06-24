@@ -3,11 +3,11 @@
   "installCommand": "corepack enable && cd ../.. && pnpm install --frozen-lockfile --prod=false",
   "buildCommand": "cd ../.. && pnpm -r --filter='./packages/*' run build && cd apps/preview-registry && corepack pnpm tsx scripts/publish-on-deploy.ts",
   "functions": {
-    "api/index.ts": {
+    "api/registry.ts": {
       "includeFiles": ".snapshots/**"
     }
   },
   "rewrites": [
-    { "source": "/:path*", "destination": "/api/index" }
+    { "source": "/:path*", "destination": "/api/registry" }
   ]
 }
