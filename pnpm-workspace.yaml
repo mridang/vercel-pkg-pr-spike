@@ -5,9 +5,9 @@ packages:
 catalog:
   "@hono/node-server": ^1.13.7
   "@types/node": ^24.0.0
-  "@vercel/blob": ^1.0.0
+  "@vitest/coverage-v8": ^4.0.0
   hono: ^4.12.25
   tar: ^7.4.3
-  tsup: ^8.3.5
   tsx: ^4.21.0
-  typescript: ^5.7.0
+  typescript: ^6.0.0
+  vitest: ^4.0.0

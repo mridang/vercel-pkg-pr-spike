@@ -1,107 +1,167 @@
-// Runs as part of the Vercel build. Packs every workspace package,
-// stamps each with a snapshot version derived from the deploy's commit
-// SHA, and writes the tarballs into apps/preview-registry/.snapshots/.
-// vercel.json's includeFiles rule ships that directory with the
-// function bundle, so the runtime reads from local disk — no external
-// storage, no token, no GitHub secret.
-
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
+/**
+ * Dependency field names a workspace package may declare a sibling
+ * package under. All of these get rewritten from `workspace:*` to the
+ * concrete snapshot version during the publish pass.
+ */
+const DEPENDENCY_FIELDS = [
+  'dependencies',
+  'devDependencies',
+  'peerDependencies',
+  'optionalDependencies',
+] as const
+
 const APP_ROOT = resolve(import.meta.dirname, '..')
-const REPO = resolve(APP_ROOT, '..', '..')
+const REPO_ROOT = resolve(APP_ROOT, '..', '..')
 const SNAPSHOT_ROOT = join(APP_ROOT, '.snapshots')
 
-const sha = (process.env.VERCEL_GIT_COMMIT_SHA ?? '').slice(0, 7) || 'localdev'
-const snapshotVersion = `0.0.0-sha-${sha}`
+const commitSha = (process.env.VERCEL_GIT_COMMIT_SHA ?? '').slice(0, 7)
+const SNAPSHOT_VERSION = `0.0.0-sha-${commitSha || 'localdev'}`
 
-const packageDirs = readdirSync(join(REPO, 'packages'))
-  .map((p) => `packages/${p}`)
-  .filter((p) => {
-    try {
-      return readdirSync(join(REPO, p)).includes('package.json')
-    } catch {
-      return false
-    }
-  })
+/**
+ * Snapshot of the on-disk state of a single `package.json` file, kept
+ * so the file can be restored verbatim after the publish pass finishes.
+ */
+interface StampedPackage {
+  readonly packageJsonPath: string
+  readonly originalContent: string
+  readonly name: string
+}
 
-// Store each modified file's full original content so we can restore it
-// verbatim afterward — both the version bump AND the workspace:* rewrites.
-const stampedOriginals = new Map<string, string>()
-const DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const
+interface MutablePackageJson {
+  name: string
+  version: string
+  dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
+  peerDependencies?: Record<string, string>
+  optionalDependencies?: Record<string, string>
+  [key: string]: unknown
+}
 
-const stamp = (dir: string): string => {
-  const pkgPath = join(REPO, dir, 'package.json')
-  const original = readFileSync(pkgPath, 'utf8')
-  stampedOriginals.set(pkgPath, original)
+const listPackageDirectories = (): readonly string[] =>
+  readdirSync(join(REPO_ROOT, 'packages'))
+    .map((entry) => `packages/${entry}`)
+    .filter((path) => {
+      try {
+        return readdirSync(join(REPO_ROOT, path)).includes('package.json')
+      } catch {
+        return false
+      }
+    })
 
-  const pkg = JSON.parse(original) as Record<string, unknown> & { name: string; version: string }
-  pkg.version = snapshotVersion
+/**
+ * Rewrite a single `package.json` in place: bump its version to the
+ * deploy's snapshot version and replace every `workspace:*` style
+ * dependency value with the same snapshot version.
+ *
+ * Returns a {@link StampedPackage} containing the file's original
+ * content so {@link restoreOriginals} can put it back afterwards.
+ */
+const stampPackage = (packageDirectory: string): StampedPackage => {
+  const packageJsonPath = join(REPO_ROOT, packageDirectory, 'package.json')
+  const originalContent = readFileSync(packageJsonPath, 'utf8')
+  const manifest = JSON.parse(originalContent) as MutablePackageJson
 
-  // pnpm pack resolves workspace:* from the lockfile snapshot (which still
-  // has 0.0.0), not from our in-flight stamp on disk. Rewrite the dep
-  // string to the literal snapshot version so the published tarball
-  // resolves correctly when an external consumer installs it.
-  for (const field of DEP_FIELDS) {
-    const deps = pkg[field] as Record<string, string> | undefined
+  manifest.version = SNAPSHOT_VERSION
+  for (const field of DEPENDENCY_FIELDS) {
+    const deps = manifest[field]
     if (!deps) continue
-    for (const [name, value] of Object.entries(deps)) {
+    for (const [dependencyName, value] of Object.entries(deps)) {
       if (typeof value === 'string' && value.startsWith('workspace:')) {
-        deps[name] = snapshotVersion
+        deps[dependencyName] = SNAPSHOT_VERSION
       }
     }
   }
 
-  writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
-  return pkg.name
-}
-
-const restoreAll = (): void => {
-  for (const [path, content] of stampedOriginals) {
-    writeFileSync(path, content)
+  writeFileSync(packageJsonPath, JSON.stringify(manifest, null, 2) + '\n')
+  return {
+    packageJsonPath,
+    originalContent,
+    name: manifest.name,
   }
 }
 
-// Wipe any prior snapshots from this build dir so the function only
-// ships the ones we just packed.
-rmSync(SNAPSHOT_ROOT, { recursive: true, force: true })
+const restoreOriginals = (stamped: readonly StampedPackage[]): void => {
+  for (const { packageJsonPath, originalContent } of stamped) {
+    writeFileSync(packageJsonPath, originalContent)
+  }
+}
 
-const out = mkdtempSync(join(tmpdir(), 'publish-on-deploy-'))
-try {
-  for (const dir of packageDirs) {
-    const name = stamp(dir)
-    console.log(`packing ${dir} → ${name}@${snapshotVersion}`)
-    execFileSync('corepack', ['pnpm', 'pack', '--pack-destination', out], {
-      cwd: join(REPO, dir),
-      stdio: 'inherit',
+const tarballPrefixFor = (packageName: string): string =>
+  packageName.replace('@', '').replace('/', '-') + '-'
+
+/**
+ * Pack every workspace package and copy each resulting tarball into
+ * the snapshot bundle the Vercel function ships.
+ *
+ * Runs as the second half of `vercel.json`'s `buildCommand`. The
+ * function bundle includes `.snapshots/**` via `vercel.json#functions`,
+ * so once this script finishes the snapshots are already in place for
+ * the deploy that follows.
+ */
+const publishOnDeploy = async (): Promise<void> => {
+  rmSync(SNAPSHOT_ROOT, { recursive: true, force: true })
+
+  const stagingDirectory = mkdtempSync(join(tmpdir(), 'publish-on-deploy-'))
+  let stamped: readonly StampedPackage[] = []
+  try {
+    stamped = listPackageDirectories().map((packageDirectory) => {
+      const entry = stampPackage(packageDirectory)
+      console.log(`packing ${packageDirectory} → ${entry.name}@${SNAPSHOT_VERSION}`)
+      execFileSync(
+        'corepack',
+        [
+          'pnpm',
+          'pack',
+          '--pack-destination',
+          stagingDirectory,
+        ],
+        { cwd: join(REPO_ROOT, packageDirectory), stdio: 'inherit' },
+      )
+      return entry
     })
+
+    const writtenCount = readdirSync(stagingDirectory)
+      .filter((file) => file.endsWith('.tgz'))
+      .reduce<number>((count, tarballFile) => {
+        const matched = stamped.find((entry) =>
+          tarballFile.startsWith(tarballPrefixFor(entry.name)),
+        )
+        if (!matched) {
+          console.warn(`skip ${tarballFile} — no matching workspace package`)
+          return count
+        }
+        const destination = join(
+          SNAPSHOT_ROOT,
+          matched.name,
+          '-',
+          tarballFile,
+        )
+        mkdirSync(resolve(destination, '..'), { recursive: true })
+        writeFileSync(
+          destination,
+          readFileSync(join(stagingDirectory, tarballFile)),
+        )
+        console.log(`bundled ${matched.name}@${SNAPSHOT_VERSION}`)
+        return count + 1
+      }, 0)
+
+    console.log(`\nbundled ${writtenCount} snapshot(s) into ${SNAPSHOT_ROOT}`)
+  } finally {
+    restoreOriginals(stamped)
+    rmSync(stagingDirectory, { recursive: true, force: true })
   }
-
-  const namesByDir = [...stampedOriginals.keys()].map((p) => ({
-    path: p,
-    name: (JSON.parse(readFileSync(p, 'utf8')) as { name: string }).name,
-  }))
-
-  let written = 0
-  for (const file of readdirSync(out).filter((f) => f.endsWith('.tgz'))) {
-    const matched = namesByDir.find((m) =>
-      file.startsWith(m.name.replace('@', '').replace('/', '-') + '-'),
-    )
-    if (!matched) {
-      console.warn(`skip ${file} — no matching workspace package`)
-      continue
-    }
-    const dest = join(SNAPSHOT_ROOT, matched.name, '-', file)
-    mkdirSync(resolve(dest, '..'), { recursive: true })
-    writeFileSync(dest, readFileSync(join(out, file)))
-    console.log(`bundled ${matched.name}@${snapshotVersion}`)
-    written++
-  }
-
-  console.log(`\nbundled ${written} snapshot(s) into ${SNAPSHOT_ROOT}`)
-} finally {
-  restoreAll()
-  rmSync(out, { recursive: true, force: true })
 }
+
+await publishOnDeploy()

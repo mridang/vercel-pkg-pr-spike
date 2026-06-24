@@ -1,71 +1,123 @@
-// Landing page rendered at /. Lists every package the current deploy's
-// snapshot bundle ships, with copy-pasteable install commands. Pure
-// string templating so the function bundle stays tiny (no SSR framework).
-
 import type { BlobEntry } from './storage.js'
 
-interface PackageInfo {
-  name: string
-  version: string
-  sizeBytes: number
+/**
+ * One row on the landing page's package list.
+ *
+ * Snapshot version is parsed out of the tarball filename rather than
+ * read from the manifest inside, so producing this list is a cheap
+ * pure-data transform with no I/O.
+ */
+export interface PackageRow {
+  readonly name: string
+  readonly version: string
+  readonly sizeBytes: number
 }
 
-const escapeHtml = (s: string): string =>
-  s.replace(/[&<>"']/g, (c) =>
-    c === '&' ? '&amp;' :
-    c === '<' ? '&lt;' :
-    c === '>' ? '&gt;' :
-    c === '"' ? '&quot;' :
-    '&#39;',
+const HTML_ESCAPE_MAP = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+} as const
+
+const HTML_ESCAPE_PATTERN = /[&<>"']/g
+
+const escapeHtml = (input: string): string =>
+  input.replace(
+    HTML_ESCAPE_PATTERN,
+    (character) =>
+      HTML_ESCAPE_MAP[character as keyof typeof HTML_ESCAPE_MAP] ?? character,
   )
 
-export const collectPackages = (blobs: BlobEntry[]): PackageInfo[] => {
-  const map = new Map<string, PackageInfo>()
-  for (const blob of blobs) {
-    // Key shape: "<scope>/<name>/-/<file>.tgz"
-    const match = blob.key.match(/^(@[^/]+\/[^/]+)\/-\/(.+)\.tgz$/)
-    if (!match) continue
-    const [, name, filename] = match
-    if (!name || !filename) continue
-    // Filename shape: "<scope-name>-<version>.tgz" (pnpm pack convention)
-    const prefix = name.replace('@', '').replace('/', '-') + '-'
-    const version = filename.startsWith(prefix)
-      ? filename.slice(prefix.length)
-      : 'unknown'
-    if (!map.has(name)) {
-      map.set(name, { name, version, sizeBytes: blob.size })
-    }
-  }
-  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
+const TARBALL_KEY_PATTERN = /^(@[^/]+\/[^/]+)\/-\/(.+)\.tgz$/
+
+/**
+ * Derive a sorted, deduplicated list of {@link PackageRow}s from the
+ * raw blob listing.
+ *
+ * Each tarball's blob key looks like
+ * `@scope/name/-/scope-name-<version>.tgz`. The scope and name come
+ * from the directory portion; the version is recovered by stripping
+ * the `scope-name-` prefix from the filename. Blobs that do not match
+ * this shape are silently skipped — the registry happily ignores
+ * anything else dropped into its storage root.
+ */
+export const collectPackages = (
+  blobs: readonly BlobEntry[],
+): readonly PackageRow[] => {
+  const rowsByName = blobs.reduce<ReadonlyMap<string, PackageRow>>(
+    (accumulator, blob) => {
+      const match = blob.key.match(TARBALL_KEY_PATTERN)
+      if (!match) return accumulator
+      const [, packageName, filename] = match
+      if (!packageName || !filename) return accumulator
+      if (accumulator.has(packageName)) return accumulator
+      const filenamePrefix =
+        packageName.replace('@', '').replace('/', '-') + '-'
+      const version = filename.startsWith(filenamePrefix)
+        ? filename.slice(filenamePrefix.length)
+        : 'unknown'
+      return new Map([
+        ...accumulator,
+        [packageName, { name: packageName, version, sizeBytes: blob.size }],
+      ])
+    },
+    new Map(),
+  )
+
+  return [...rowsByName.values()].sort((left, right) =>
+    left.name.localeCompare(right.name),
+  )
 }
 
+/**
+ * Render a static HTML landing page describing this deploy.
+ *
+ * The page is intentionally noindex/nofollow — preview deploys are
+ * ephemeral and should not be picked up by crawlers. Styling comes
+ * from the Tailwind CDN script so the function bundle ships nothing
+ * but the inlined HTML string.
+ *
+ * @param packages - Sorted package list from {@link collectPackages}.
+ * @param origin - Absolute URL prefix to advertise install commands
+ *   against (`https://<deploy>.vercel.app`).
+ * @param branch - Git branch name this deploy was built from. Used
+ *   purely for display.
+ */
 export const renderLanding = (
-  packages: PackageInfo[],
+  packages: readonly PackageRow[],
   origin: string,
   branch: string,
 ): string => {
-  const installList = packages.length
-    ? packages.map((p) => `${p.name}@${p.version}`).join(' ')
-    : '@mridang/foo'
-  const sampleVersion = packages[0]?.version ?? '0.0.0-sha-xxxxxxx'
+  const installList =
+    packages.length > 0
+      ? packages
+          .map((entry) => `${entry.name}@${entry.version}`)
+          .join(' ')
+      : '@mridang/foo'
 
-  const packageListHtml = packages.length
-    ? packages
-        .map(
-          (p) => `
+  const packageListHtml =
+    packages.length > 0
+      ? packages
+          .map(
+            (entry) => `
         <li class="flex items-center justify-between rounded-lg bg-slate-900/60 ring-1 ring-slate-800 px-5 py-3">
-          <code class="text-indigo-300 text-sm">${escapeHtml(p.name)}</code>
-          <span class="text-xs text-slate-500 font-mono">${escapeHtml(p.version)} · ${(p.sizeBytes / 1024).toFixed(1)} KB</span>
+          <code class="text-indigo-300 text-sm">${escapeHtml(entry.name)}</code>
+          <span class="text-xs text-slate-500 font-mono">${escapeHtml(entry.version)} · ${(entry.sizeBytes / 1024).toFixed(1)} KB</span>
         </li>`,
-        )
-        .join('')
-    : `<li class="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 px-5 py-3 text-slate-500 text-sm">No snapshots in this deploy yet.</li>`
+          )
+          .join('')
+      : `<li class="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 px-5 py-3 text-slate-500 text-sm">No snapshots in this deploy yet.</li>`
 
   return `<!DOCTYPE html>
 <html lang="en" class="bg-slate-950">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+<meta name="googlebot" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
 <title>vercel-pkg-pr-spike · per-PR npm registry</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="preconnect" href="https://rsms.me/">
@@ -123,3 +175,11 @@ export const renderLanding = (
 </body>
 </html>`
 }
+
+/**
+ * Plain-text body served at `/robots.txt` to keep crawlers out of any
+ * preview deploy URL.
+ */
+export const ROBOTS_TXT = `User-agent: *
+Disallow: /
+`

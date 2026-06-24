@@ -8,7 +8,9 @@
   "scripts": {
     "stage:local": "tsx apps/preview-registry/scripts/stage-local.ts",
     "dev:registry": "tsx apps/preview-registry/scripts/local-server.ts",
-    "verify": "tsx scripts/verify-e2e.ts"
+    "verify": "tsx scripts/verify-e2e.ts",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck"
   },
   "devDependencies": {
     "@moonrepo/cli": "^1.30.0",

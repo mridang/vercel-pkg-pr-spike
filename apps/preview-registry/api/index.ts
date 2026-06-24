@@ -1,42 +1,41 @@
-// Vercel entry point. Wires the FS-backed store rooted at the bundled
-// .snapshots/ directory (populated during the Vercel build and shipped
-// with the deploy via includeFiles in vercel.json) into the shared Hono
-// app. Public URL base is taken from the Vercel-injected VERCEL_URL.
-
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createApp } from '../src/app.js'
 import { createFsStore } from '../src/storage.js'
 
-// Vercel's @vercel/node builder may compile ESM to CJS; in that case
-// `import.meta.dirname` is undefined and `__dirname` is defined. Try both,
-// then fall back to process.cwd() — on Vercel that's the function's
-// working directory which still includes our bundled .snapshots/ via
-// vercel.json's includeFiles.
-const here =
-  typeof __dirname === 'string'
-    ? __dirname
-    : (() => {
-        try {
-          return dirname(fileURLToPath(import.meta.url))
-        } catch {
-          return process.cwd()
-        }
-      })()
+/**
+ * Resolve the directory the snapshot bundle lives in, regardless of
+ * whether the function was shipped as ESM or transpiled to CJS by the
+ * Vercel builder. Tries `__dirname` first (CJS), then
+ * `import.meta.url` (native ESM), and finally `process.cwd()` so the
+ * registry still serves the right files if either of those become
+ * undefined in a future runtime.
+ */
+const resolveFunctionDirectory = (): string => {
+  const cjsDirectory =
+    typeof __dirname === 'string' ? __dirname : undefined
+  if (cjsDirectory) return cjsDirectory
+  try {
+    return dirname(fileURLToPath(import.meta.url))
+  } catch {
+    return process.cwd()
+  }
+}
 
-const SNAPSHOT_ROOT = resolve(here, '..', '.snapshots')
+const SNAPSHOT_ROOT = resolve(resolveFunctionDirectory(), '..', '.snapshots')
+
 const PUBLIC_BASE = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
   : ''
 
 const app = createApp(createFsStore(SNAPSHOT_ROOT, PUBLIC_BASE))
 
-// Vercel's @vercel/node runtime expects either the classic
-// (req, res) => void signature on the default export, or a Web Fetch
-// handler exported under a recognised name (`fetch`, `GET`, `POST`, ...).
-// Hono is a Fetch-style app, so we expose app.fetch as named exports for
-// every HTTP method the registry serves.
+/**
+ * Vercel's `@vercel/node` runtime treats a default export as the
+ * classic `(req, res) => void` Node HTTP signature, but Hono is a
+ * web-Fetch app. Exporting `fetch` makes Vercel route requests
+ * through the Fetch signature instead. Only one named export is
+ * needed; exporting both `fetch` and individual HTTP method names
+ * causes the runtime to dispatch the request twice.
+ */
 export const fetch = app.fetch
-export const GET = app.fetch
-export const HEAD = app.fetch
-export const OPTIONS = app.fetch
