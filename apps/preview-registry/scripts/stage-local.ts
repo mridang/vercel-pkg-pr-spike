@@ -1,41 +1,19 @@
-// Stages all workspace packages to the local FS-backed BlobStore so the
-// dev server has something to serve. Mirrors what the GitHub Actions
-// workflow does in production (pack → upload), just without the network.
+// Stages all workspace packages to .snapshots/ so the dev server has
+// something to serve. Same layout, same paths as the Vercel build —
+// the only difference is no version stamping (uses each package's
+// published version as-is) so the loop matches whatever's checked in.
 
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { Readable } from 'node:stream'
-import { x as untar } from 'tar'
-import { createFsStore } from '../src/storage.js'
 
-const REPO = resolve(import.meta.dirname, '../../..')
+const APP_ROOT = resolve(import.meta.dirname, '..')
+const REPO = resolve(APP_ROOT, '..', '..')
+const SNAPSHOT_ROOT = join(APP_ROOT, '.snapshots')
 const PACKAGES = ['packages/foo', 'packages/bar', 'packages/baz']
-const BRANCH = process.env.LOCAL_BRANCH ?? 'local'
-const BLOB_ROOT = resolve(import.meta.dirname, '..', '.local-blob')
-const PUBLIC_BASE = process.env.PUBLIC_BASE ?? 'http://localhost:3000'
 
-const store = createFsStore(BLOB_ROOT, PUBLIC_BASE)
-
-const readManifestName = async (tarball: Buffer): Promise<{ name: string }> => {
-  let manifest: { name: string } | undefined
-  await new Promise<void>((res, rej) => {
-    const parser = untar({
-      filter: (p) => p === 'package/package.json',
-      onentry: (entry) => {
-        const chunks: Buffer[] = []
-        entry.on('data', (d: Buffer) => chunks.push(d))
-        entry.on('end', () => {
-          manifest = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-        })
-      },
-    })
-    Readable.from(tarball).pipe(parser).on('finish', () => res()).on('error', rej)
-  })
-  if (!manifest) throw new Error('no package.json in tarball')
-  return manifest
-}
+rmSync(SNAPSHOT_ROOT, { recursive: true, force: true })
 
 const out = mkdtempSync(join(tmpdir(), 'stage-local-'))
 try {
@@ -48,18 +26,25 @@ try {
     )
   }
 
-  const tgzs = readdirSync(out).filter((f) => f.endsWith('.tgz'))
-  for (const file of tgzs) {
+  for (const file of readdirSync(out).filter((f) => f.endsWith('.tgz'))) {
     const buf = readFileSync(join(out, file))
-    const { name } = await readManifestName(buf)
-    const key = `branch-${BRANCH}/${name}/-/${file}`
-    const entry = await store.put(key, buf, 'application/octet-stream')
-    console.log(`  uploaded ${name} → ${entry.url}`)
+    // pnpm names tarballs <scope>-<package>-<version>.tgz. Find the
+    // matching workspace pkg.json by stripping the prefix.
+    const pkgJsonPath = PACKAGES.map((p) => join(REPO, p, 'package.json'))
+      .map((p) => ({ path: p, json: JSON.parse(readFileSync(p, 'utf8')) as { name: string } }))
+      .find(({ json }) => file.startsWith(json.name.replace('@', '').replace('/', '-') + '-'))
+    if (!pkgJsonPath) {
+      console.warn(`skip ${file} — no matching workspace package`)
+      continue
+    }
+    const dest = join(SNAPSHOT_ROOT, pkgJsonPath.json.name, '-', file)
+    mkdirSync(resolve(dest, '..'), { recursive: true })
+    writeFileSync(dest, buf)
+    console.log(`  bundled ${pkgJsonPath.json.name} → ${dest}`)
   }
 
-  console.log(`\nstaged ${tgzs.length} tarballs under branch=${BRANCH}`)
-  console.log(`now run:  pnpm dev:registry`)
-  console.log(`then:     curl ${PUBLIC_BASE}/@mridang/foo | jq .`)
+  console.log(`\nstaged into ${SNAPSHOT_ROOT}`)
+  console.log(`now run:  corepack pnpm dev:registry`)
 } finally {
   rmSync(out, { recursive: true, force: true })
 }

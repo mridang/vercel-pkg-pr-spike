@@ -1,7 +1,6 @@
-// Dev server. Runs the same Hono app the Vercel function exports, but with
-// a filesystem-backed BlobStore so the round-trip works without `vercel
-// dev`, Vercel Blob, or any network. The .local-blob directory lives under
-// the app root and is gitignored.
+// Dev server. Runs the same Hono app the Vercel function exports, using
+// the same .snapshots/ directory layout the production build populates,
+// so the local round-trip is byte-identical to a real deploy.
 
 import { resolve } from 'node:path'
 import { serve } from '@hono/node-server'
@@ -9,7 +8,7 @@ import { createApp } from '../src/app.js'
 import { createFsStore } from '../src/storage.js'
 
 const port = Number(process.env.PORT ?? 3000)
-const root = resolve(import.meta.dirname, '..', '.local-blob')
+const root = resolve(import.meta.dirname, '..', '.snapshots')
 const publicBase = `http://localhost:${port}`
 
 const app = createApp(createFsStore(root, publicBase))

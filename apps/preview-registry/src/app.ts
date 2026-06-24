@@ -1,11 +1,11 @@
 // Hono app exposing the npm registry protocol over a BlobStore. The same
 // app instance runs locally (via @hono/node-server) and on Vercel (wrapped
 // with hono/vercel's handle()), so the contract is identical in both
-// environments.
+// environments. Each deploy serves only its own deploy's snapshots.
 
 import { Hono } from 'hono'
 import { buildPackument } from './packument.js'
-import { branchFromHost, type BlobStore } from './storage.js'
+import type { BlobStore } from './storage.js'
 
 export const createApp = (store: BlobStore) => {
   const app = new Hono()
@@ -15,8 +15,9 @@ export const createApp = (store: BlobStore) => {
   )
   app.get('/-/ping', (c) => c.text('OK'))
 
-  // Local-only: serve a tarball from the filesystem backend. In production
-  // Vercel Blob hands out its own public URLs and this endpoint is unused.
+  // Tarball serving. In every environment we read from the same FS-backed
+  // store. On Vercel the store is rooted in the function bundle (snapshots
+  // get baked in at build time via includeFiles in vercel.json).
   app.get('/-/blob/*', async (c) => {
     const key = decodeURIComponent(c.req.path.replace(/^\/-\/blob\//, ''))
     try {
@@ -30,10 +31,8 @@ export const createApp = (store: BlobStore) => {
 
   // Scoped packument: GET /@scope/name
   app.get('/:scope{@[^/]+}/:name', async (c) => {
-    const branch = branchFromHost(c.req.header('host'))
     const packument = await buildPackument(
       store,
-      branch,
       c.req.param('scope'),
       c.req.param('name'),
     )
@@ -47,8 +46,7 @@ export const createApp = (store: BlobStore) => {
     const decoded = decodeURIComponent(c.req.param('full'))
     const [scope, name] = decoded.split('/')
     if (!scope || !name) return c.json({ error: 'bad path' }, 400)
-    const branch = branchFromHost(c.req.header('host'))
-    const packument = await buildPackument(store, branch, scope, name)
+    const packument = await buildPackument(store, scope, name)
     if (!packument) return c.json({ error: 'not found' }, 404)
     c.header('Cache-Control', 's-maxage=60, stale-while-revalidate=86400')
     return c.json(packument)

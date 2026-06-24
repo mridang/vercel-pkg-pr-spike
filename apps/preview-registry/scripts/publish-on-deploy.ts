@@ -1,29 +1,21 @@
-// Runs as part of the Vercel build for this app. Packs every workspace
-// package, stamps each with a snapshot version (0.0.0-sha-<sha>), and
-// uploads the tarballs to Vercel Blob using the BLOB_READ_WRITE_TOKEN
-// that Vercel auto-injects when a Blob store is connected to the project.
-//
-// No GitHub secret, no CI workflow — every Vercel deploy republishes its
-// own preview-scoped snapshots.
+// Runs as part of the Vercel build. Packs every workspace package,
+// stamps each with a snapshot version derived from the deploy's commit
+// SHA, and writes the tarballs into apps/preview-registry/.snapshots/.
+// vercel.json's includeFiles rule ships that directory with the
+// function bundle, so the runtime reads from local disk — no external
+// storage, no token, no GitHub secret.
 
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { put } from '@vercel/blob'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const REPO = resolve(APP_ROOT, '..', '..')
+const SNAPSHOT_ROOT = join(APP_ROOT, '.snapshots')
 
 const sha = (process.env.VERCEL_GIT_COMMIT_SHA ?? '').slice(0, 7) || 'localdev'
-const rawBranch = process.env.VERCEL_GIT_COMMIT_REF ?? 'main'
-const branch = rawBranch.replace(/[^a-z0-9-]/gi, '-').toLowerCase()
 const snapshotVersion = `0.0.0-sha-${sha}`
-
-if (!process.env.BLOB_READ_WRITE_TOKEN) {
-  console.error('BLOB_READ_WRITE_TOKEN missing — connect a Blob store to this Vercel project')
-  process.exit(1)
-}
 
 const packageDirs = readdirSync(join(REPO, 'packages'))
   .map((p) => `packages/${p}`)
@@ -52,6 +44,10 @@ const restoreAll = (): void => {
   }
 }
 
+// Wipe any prior snapshots from this build dir so the function only
+// ships the ones we just packed.
+rmSync(SNAPSHOT_ROOT, { recursive: true, force: true })
+
 const out = mkdtempSync(join(tmpdir(), 'publish-on-deploy-'))
 try {
   for (const dir of packageDirs) {
@@ -63,32 +59,28 @@ try {
     })
   }
 
-  const uploaded: Array<{ name: string; url: string }> = []
-  const files = readdirSync(out).filter((f) => f.endsWith('.tgz'))
-  for (const file of files) {
-    const buf = readFileSync(join(out, file))
-    // pnpm pack names files as <scope-package>-<version>.tgz, e.g.
-    // mridang-foo-0.0.0-sha-abc123d.tgz. Recover the npm package name by
-    // matching against the package.json names we just stamped.
-    const matched = [...stampedOriginals.keys()]
-      .map((p) => JSON.parse(readFileSync(p, 'utf8')) as { name: string })
-      .find((m) => file.startsWith(m.name.replace('@', '').replace('/', '-') + '-'))
+  const namesByDir = [...stampedOriginals.keys()].map((p) => ({
+    path: p,
+    name: (JSON.parse(readFileSync(p, 'utf8')) as { name: string }).name,
+  }))
+
+  let written = 0
+  for (const file of readdirSync(out).filter((f) => f.endsWith('.tgz'))) {
+    const matched = namesByDir.find((m) =>
+      file.startsWith(m.name.replace('@', '').replace('/', '-') + '-'),
+    )
     if (!matched) {
       console.warn(`skip ${file} — no matching workspace package`)
       continue
     }
-    const key = `branch-${branch}/${matched.name}/-/${file}`
-    const blob = await put(key, buf, {
-      access: 'public',
-      addRandomSuffix: false,
-      contentType: 'application/octet-stream',
-      allowOverwrite: true,
-    })
-    console.log(`uploaded ${matched.name}@${snapshotVersion} → ${blob.url}`)
-    uploaded.push({ name: matched.name, url: blob.url })
+    const dest = join(SNAPSHOT_ROOT, matched.name, '-', file)
+    mkdirSync(resolve(dest, '..'), { recursive: true })
+    writeFileSync(dest, readFileSync(join(out, file)))
+    console.log(`bundled ${matched.name}@${snapshotVersion}`)
+    written++
   }
 
-  console.log(`\npublished ${uploaded.length} snapshot(s) under branch=${branch}`)
+  console.log(`\nbundled ${written} snapshot(s) into ${SNAPSHOT_ROOT}`)
 } finally {
   restoreAll()
   rmSync(out, { recursive: true, force: true })

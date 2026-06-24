@@ -46,11 +46,10 @@ export interface Packument {
 
 export const buildPackument = async (
   store: BlobStore,
-  branch: string,
   scope: string,
   name: string,
 ): Promise<Packument | null> => {
-  const prefix = `branch-${branch}/${scope}/${name}/-/`
+  const prefix = `${scope}/${name}/-/`
   const blobs = (await store.list(prefix)).filter((b) => b.key.endsWith('.tgz'))
   if (blobs.length === 0) return null
 

@@ -1,7 +1,12 @@
-// Storage abstraction so the same handler runs against Vercel Blob in
-// production and against a local filesystem during the spike. Keys are flat
-// strings of the form "branch-<ref>/<scope>/<name>/-/<file>.tgz" — the same
-// shape Vercel Blob will see.
+// Tarballs live on the local filesystem of whichever environment is
+// serving them. In production that's the function bundle (snapshots are
+// written during the Vercel build and shipped with the deploy). Locally
+// it's the same .snapshots/ directory under apps/preview-registry/, so
+// the dev server reads from exactly the same shape it serves in prod.
+//
+// Keys are flat strings of the form "<scope>/<name>/-/<file>.tgz". No
+// branch prefix needed — each Vercel preview deploy already has its own
+// isolated function bundle scoped to one branch.
 
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -19,9 +24,6 @@ export interface BlobStore {
   read(key: string): Promise<Buffer>
 }
 
-// Local filesystem backend. Writes under .local-blob/ and serves tarballs
-// back through the registry app itself (the handler maps /-/blob/<key> to a
-// read() call) — no separate static server needed for the spike.
 export const createFsStore = (root: string, publicBase: string): BlobStore => ({
   async put(key, body, _contentType) {
     const path = join(root, key)
@@ -70,58 +72,3 @@ export const createFsStore = (root: string, publicBase: string): BlobStore => ({
     return readFile(join(root, key))
   },
 })
-
-// Vercel Blob backend — used in deployed environments. Reads only; uploads
-// happen from CI via @vercel/blob's put() directly (see CI workflow).
-export const createVercelStore = async (publicBase: string): Promise<BlobStore> => {
-  const { list, put, head } = await import('@vercel/blob')
-  return {
-    async put(key, body, contentType) {
-      const blob = await put(key, body, {
-        access: 'public',
-        addRandomSuffix: false,
-        contentType,
-        allowOverwrite: true,
-      })
-      return { key, url: blob.url, size: body.length, uploadedAt: new Date() }
-    },
-
-    async list(prefix) {
-      const out: BlobEntry[] = []
-      let cursor: string | undefined
-      do {
-        const page = await list({ prefix, cursor })
-        for (const blob of page.blobs) {
-          out.push({
-            key: blob.pathname,
-            url: blob.url,
-            size: blob.size,
-            uploadedAt: new Date(blob.uploadedAt),
-          })
-        }
-        cursor = page.cursor
-      } while (cursor)
-      return out
-    },
-
-    async read(key) {
-      const info = await head(key)
-      const res = await fetch(info.url)
-      if (!res.ok) throw new Error(`fetch ${info.url}: ${res.status}`)
-      return Buffer.from(await res.arrayBuffer())
-    },
-  }
-}
-
-// Branch routing: in Vercel, preview deployments live at
-// <project>-git-<branch>-<team>.vercel.app. We extract <branch> from the host
-// so each PR's deployment only sees its own tarballs.
-export const branchFromHost = (host: string | undefined): string => {
-  if (!host) return 'main'
-  const m = host.match(/-git-([a-z0-9-]+?)(?:-[a-z0-9]+)?\.vercel\.app$/)
-  if (m) return m[1]!
-  if (host.startsWith('localhost') || host.startsWith('127.0.0.1')) {
-    return process.env.LOCAL_BRANCH ?? 'local'
-  }
-  return 'main'
-}
