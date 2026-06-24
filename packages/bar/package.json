@@ -16,12 +16,14 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@mridang/foo": "workspace:*"
   },
   "devDependencies": {
+    "eslint": "catalog:",
     "typescript": "catalog:"
   }
 }

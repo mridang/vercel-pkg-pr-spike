@@ -3,7 +3,5 @@
   "framework": null,
   "installCommand": "corepack enable && cd ../.. && pnpm install --frozen-lockfile --prod=false",
   "buildCommand": "echo 'no build step'",
-  "rewrites": [
-    { "source": "/(.+)", "destination": "/api/hello" }
-  ]
+  "rewrites": [{ "source": "/(.+)", "destination": "/api/hello" }]
 }

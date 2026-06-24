@@ -1,4 +1,4 @@
-import type { BlobEntry } from './storage.js'
+import type { BlobEntry } from "./storage.js";
 
 /**
  * One row on the landing page's package list.
@@ -8,36 +8,35 @@ import type { BlobEntry } from './storage.js'
  * pure-data transform with no I/O.
  */
 export interface PackageRow {
-  readonly name: string
-  readonly version: string
-  readonly sizeBytes: number
+  readonly name: string;
+  readonly version: string;
+  readonly sizeBytes: number;
 }
 
 /** Character-to-entity table used by {@link escapeHtml}. */
 const HTML_ESCAPE_MAP = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#39;',
-} as const
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+} as const;
 
 /** Regex matching any character that requires HTML entity encoding. */
-const HTML_ESCAPE_PATTERN = /[&<>"']/g
+const HTML_ESCAPE_PATTERN = /[&<>"']/g;
 
 /** Encode `&`, `<`, `>`, `"`, `'` as HTML entities so user-supplied strings cannot break the document. */
 const escapeHtml = (input: string): string =>
   input.replace(
     HTML_ESCAPE_PATTERN,
-    (character) =>
-      HTML_ESCAPE_MAP[character as keyof typeof HTML_ESCAPE_MAP] ?? character,
-  )
+    (character) => HTML_ESCAPE_MAP[character as keyof typeof HTML_ESCAPE_MAP] ?? character,
+  );
 
 /**
  * Regex matching a snapshot tarball blob key. Captures the npm package
  * name in group 1 and the tarball filename (without `.tgz`) in group 2.
  */
-const TARBALL_KEY_PATTERN = /^(@[^/]+\/[^/]+)\/-\/(.+)\.tgz$/
+const TARBALL_KEY_PATTERN = /^(@[^/]+\/[^/]+)\/-\/(.+)\.tgz$/;
 
 /**
  * Derive a sorted, deduplicated list of {@link PackageRow}s from the
@@ -50,33 +49,25 @@ const TARBALL_KEY_PATTERN = /^(@[^/]+\/[^/]+)\/-\/(.+)\.tgz$/
  * this shape are silently skipped — the registry happily ignores
  * anything else dropped into its storage root.
  */
-export const collectPackages = (
-  blobs: readonly BlobEntry[],
-): readonly PackageRow[] => {
-  const rowsByName = blobs.reduce<ReadonlyMap<string, PackageRow>>(
-    (accumulator, blob) => {
-      const match = blob.key.match(TARBALL_KEY_PATTERN)
-      if (!match) return accumulator
-      const [, packageName, filename] = match
-      if (!packageName || !filename) return accumulator
-      if (accumulator.has(packageName)) return accumulator
-      const filenamePrefix =
-        packageName.replace('@', '').replace('/', '-') + '-'
-      const version = filename.startsWith(filenamePrefix)
-        ? filename.slice(filenamePrefix.length)
-        : 'unknown'
-      return new Map([
-        ...accumulator,
-        [packageName, { name: packageName, version, sizeBytes: blob.size }],
-      ])
-    },
-    new Map(),
-  )
+export const collectPackages = (blobs: readonly BlobEntry[]): readonly PackageRow[] => {
+  const rowsByName = blobs.reduce<ReadonlyMap<string, PackageRow>>((accumulator, blob) => {
+    const match = blob.key.match(TARBALL_KEY_PATTERN);
+    if (!match) return accumulator;
+    const [, packageName, filename] = match;
+    if (!packageName || !filename) return accumulator;
+    if (accumulator.has(packageName)) return accumulator;
+    const filenamePrefix = packageName.replace("@", "").replace("/", "-") + "-";
+    const version = filename.startsWith(filenamePrefix)
+      ? filename.slice(filenamePrefix.length)
+      : "unknown";
+    return new Map([
+      ...accumulator,
+      [packageName, { name: packageName, version, sizeBytes: blob.size }],
+    ]);
+  }, new Map());
 
-  return [...rowsByName.values()].sort((left, right) =>
-    left.name.localeCompare(right.name),
-  )
-}
+  return [...rowsByName.values()].sort((left, right) => left.name.localeCompare(right.name));
+};
 
 /**
  * Render a minimal HTML landing page describing this deploy.
@@ -97,8 +88,8 @@ export const renderLanding = (
   origin: string,
   branch: string,
 ): string => {
-  const firstPackage = packages[0]
-  const scope = firstPackage?.name.split('/')[0]
+  const firstPackage = packages[0];
+  const scope = firstPackage?.name.split("/")[0];
 
   const installBlock = firstPackage
     ? `
@@ -108,14 +99,14 @@ export const renderLanding = (
     </section>
 
     <section class="mb-10">
-      <h2 class="mb-2 text-sm font-medium">Or pin this registry for the whole <code>${escapeHtml(scope ?? '')}</code> scope</h2>
+      <h2 class="mb-2 text-sm font-medium">Or pin this registry for the whole <code>${escapeHtml(scope ?? "")}</code> scope</h2>
       <p class="mb-2 text-sm text-slate-500 dark:text-slate-400">
         Add one line to your <code>.npmrc</code>, then <code>npm install</code> any of the packages below normally.
       </p>
-      <pre class="overflow-x-auto rounded border border-slate-200 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-900">${escapeHtml(scope ?? '')}:registry=${escapeHtml(origin)}</pre>
+      <pre class="overflow-x-auto rounded border border-slate-200 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-900">${escapeHtml(scope ?? "")}:registry=${escapeHtml(origin)}</pre>
     </section>
     `
-    : ''
+    : "";
 
   const packageListHtml =
     packages.length > 0
@@ -127,8 +118,8 @@ export const renderLanding = (
           <span class="text-xs text-slate-500 dark:text-slate-400">${escapeHtml(entry.version)}</span>
         </li>`,
           )
-          .join('')
-      : `<li class="py-2 text-sm text-slate-500 dark:text-slate-400">No snapshots in this deploy yet.</li>`
+          .join("")
+      : `<li class="py-2 text-sm text-slate-500 dark:text-slate-400">No snapshots in this deploy yet.</li>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -168,8 +159,8 @@ ${installBlock}
     </footer>
   </main>
 </body>
-</html>`
-}
+</html>`;
+};
 
 /**
  * Plain-text body served at `/robots.txt` to keep crawlers out of any
@@ -177,4 +168,4 @@ ${installBlock}
  */
 export const ROBOTS_TXT = `User-agent: *
 Disallow: /
-`
+`;

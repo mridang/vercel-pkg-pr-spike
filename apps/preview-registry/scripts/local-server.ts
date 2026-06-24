@@ -1,7 +1,8 @@
-import { resolve } from 'node:path'
-import { serve } from '@hono/node-server'
-import { createApp } from '../src/app.js'
-import { createFsStore } from '../src/storage.js'
+import { serve } from "@hono/node-server";
+import { resolve } from "node:path";
+
+import { createApp } from "../src/app.js";
+import { createFsStore } from "../src/storage.js";
 
 /**
  * Start a local Node HTTP server that exposes the same Hono app the
@@ -11,16 +12,16 @@ import { createFsStore } from '../src/storage.js'
  * deployed Vercel preview.
  */
 const startLocalServer = async (): Promise<void> => {
-  const port = Number(process.env.PORT ?? 3000)
-  const storageRoot = resolve(import.meta.dirname, '..', '.snapshots')
-  const publicBase = `http://localhost:${port}`
+  const port = Number(process.env.PORT ?? 3000);
+  const storageRoot = resolve(import.meta.dirname, "..", ".snapshots");
+  const publicBase = `http://localhost:${port}`;
 
-  const app = createApp(createFsStore(storageRoot, publicBase))
+  const app = createApp(createFsStore(storageRoot, publicBase));
 
   serve({ fetch: app.fetch, port }, (info) => {
-    console.log(`preview-registry on http://localhost:${info.port}`)
-    console.log(`storage backend: fs @ ${storageRoot}`)
-  })
-}
+    console.log(`preview-registry on http://localhost:${info.port}`);
+    console.log(`storage backend: fs @ ${storageRoot}`);
+  });
+};
 
-await startLocalServer()
+await startLocalServer();

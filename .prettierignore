@@ -1,0 +1,9 @@
+node_modules
+dist
+.snapshots
+.local-blob
+.vercel
+.devbox
+public
+**/snapshot-manifest.ts
+pnpm-lock.yaml

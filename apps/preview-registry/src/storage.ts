@@ -1,5 +1,5 @@
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 /**
  * One entry returned by {@link BlobStore.list} or {@link BlobStore.put}.
@@ -10,10 +10,10 @@ import { dirname, join } from 'node:path'
  * packument can resolve the `latest` dist-tag.
  */
 export interface BlobEntry {
-  readonly key: string
-  readonly url: string
-  readonly size: number
-  readonly uploadedAt: Date
+  readonly key: string;
+  readonly url: string;
+  readonly size: number;
+  readonly uploadedAt: Date;
 }
 
 /**
@@ -24,13 +24,9 @@ export interface BlobEntry {
  * Vercel (where each preview deploy ships its own snapshot tarballs).
  */
 export interface BlobStore {
-  readonly put: (
-    key: string,
-    body: Buffer,
-    contentType: string,
-  ) => Promise<BlobEntry>
-  readonly list: (prefix: string) => Promise<readonly BlobEntry[]>
-  readonly read: (key: string) => Promise<Buffer>
+  readonly put: (key: string, body: Buffer, contentType: string) => Promise<BlobEntry>;
+  readonly list: (prefix: string) => Promise<readonly BlobEntry[]>;
+  readonly read: (key: string) => Promise<Buffer>;
 }
 
 /**
@@ -39,26 +35,22 @@ export interface BlobStore {
  * Returns an empty list if the root does not exist; any other error is
  * re-thrown so genuine I/O failures are not silently swallowed.
  */
-const walkDirectory = async (
-  rootDirectory: string,
-): Promise<readonly string[]> => {
-  let entries
+const walkDirectory = async (rootDirectory: string): Promise<readonly string[]> => {
+  let entries;
   try {
-    entries = await readdir(rootDirectory, { withFileTypes: true })
+    entries = await readdir(rootDirectory, { withFileTypes: true });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw error
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
   }
   const nested = await Promise.all(
     entries.map(async (entry) => {
-      const fullPath = join(rootDirectory, entry.name)
-      return entry.isDirectory()
-        ? walkDirectory(fullPath)
-        : ([fullPath] as readonly string[])
+      const fullPath = join(rootDirectory, entry.name);
+      return entry.isDirectory() ? walkDirectory(fullPath) : ([fullPath] as readonly string[]);
     }),
-  )
-  return nested.flat()
-}
+  );
+  return nested.flat();
+};
 
 /**
  * Filesystem-backed {@link BlobStore}.
@@ -69,44 +61,40 @@ const walkDirectory = async (
  *   {@link BlobEntry.url}. Consumers fetch tarballs from
  *   `${publicBase}/-/blob/<key>` which is served by the same Hono app.
  */
-export const createFsStore = (
-  storageRoot: string,
-  publicBase: string,
-): BlobStore => {
-  const toUrl = (key: string): string =>
-    `${publicBase}/-/blob/${encodeURI(key)}`
+export const createFsStore = (storageRoot: string, publicBase: string): BlobStore => {
+  const toUrl = (key: string): string => `${publicBase}/-/blob/${encodeURI(key)}`;
 
   return {
     put: async (key, body, _contentType) => {
-      const destination = join(storageRoot, key)
-      await mkdir(dirname(destination), { recursive: true })
-      await writeFile(destination, body)
+      const destination = join(storageRoot, key);
+      await mkdir(dirname(destination), { recursive: true });
+      await writeFile(destination, body);
       return {
         key,
         url: toUrl(key),
         size: body.length,
         uploadedAt: new Date(),
-      }
+      };
     },
 
     list: async (prefix) => {
-      const allFiles = await walkDirectory(storageRoot)
+      const allFiles = await walkDirectory(storageRoot);
       const matched = await Promise.all(
         allFiles.map(async (fullPath): Promise<BlobEntry | null> => {
-          const key = fullPath.slice(storageRoot.length + 1)
-          if (!key.startsWith(prefix)) return null
-          const info = await stat(fullPath)
+          const key = fullPath.slice(storageRoot.length + 1);
+          if (!key.startsWith(prefix)) return null;
+          const info = await stat(fullPath);
           return {
             key,
             url: toUrl(key),
             size: info.size,
             uploadedAt: info.mtime,
-          }
+          };
         }),
-      )
-      return matched.filter((entry): entry is BlobEntry => entry !== null)
+      );
+      return matched.filter((entry): entry is BlobEntry => entry !== null);
     },
 
     read: async (key) => readFile(join(storageRoot, key)),
-  }
-}
+  };
+};

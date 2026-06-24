@@ -8,7 +8,5 @@
       "includeFiles": ".snapshots/**"
     }
   },
-  "rewrites": [
-    { "source": "/(.+)", "destination": "/api/registry" }
-  ]
+  "rewrites": [{ "source": "/(.+)", "destination": "/api/registry" }]
 }

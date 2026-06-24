@@ -1,14 +1,7 @@
-import { execFileSync } from 'node:child_process'
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 /**
  * Workspace package directories the local stage script will pack.
@@ -16,24 +9,20 @@ import { join, resolve } from 'node:path'
  * Kept in sync with `packages/*` by convention; if you add a package
  * to the workspace, extend this list.
  */
-const WORKSPACE_PACKAGES = [
-  'packages/foo',
-  'packages/bar',
-  'packages/baz',
-] as const
+const WORKSPACE_PACKAGES = ["packages/foo", "packages/bar", "packages/baz"] as const;
 
 /** Absolute path to `apps/preview-registry/`. */
-const APP_ROOT = resolve(import.meta.dirname, '..')
+const APP_ROOT = resolve(import.meta.dirname, "..");
 
 /** Absolute path to the workspace root that owns `packages/*`. */
-const REPO_ROOT = resolve(APP_ROOT, '..', '..')
+const REPO_ROOT = resolve(APP_ROOT, "..", "..");
 
 /** Directory the local server reads tarballs out of — same layout as the prod build. */
-const SNAPSHOT_ROOT = join(APP_ROOT, '.snapshots')
+const SNAPSHOT_ROOT = join(APP_ROOT, ".snapshots");
 
 interface WorkspaceManifest {
-  readonly name: string
-  readonly version: string
+  readonly name: string;
+  readonly version: string;
 }
 
 /**
@@ -46,62 +35,43 @@ interface WorkspaceManifest {
  * checked-in `0.0.0` so iterating on schema or routing is fast.
  */
 const stageLocal = async (): Promise<void> => {
-  rmSync(SNAPSHOT_ROOT, { recursive: true, force: true })
+  rmSync(SNAPSHOT_ROOT, { recursive: true, force: true });
 
-  const stagingDirectory = mkdtempSync(join(tmpdir(), 'stage-local-'))
+  const stagingDirectory = mkdtempSync(join(tmpdir(), "stage-local-"));
   try {
     for (const packageDirectory of WORKSPACE_PACKAGES) {
-      console.log(`packing ${packageDirectory}`)
-      execFileSync(
-        'corepack',
-        [
-          'pnpm',
-          'pack',
-          '--pack-destination',
-          stagingDirectory,
-        ],
-        { cwd: join(REPO_ROOT, packageDirectory), stdio: 'inherit' },
-      )
+      console.log(`packing ${packageDirectory}`);
+      execFileSync("corepack", ["pnpm", "pack", "--pack-destination", stagingDirectory], {
+        cwd: join(REPO_ROOT, packageDirectory),
+        stdio: "inherit",
+      });
     }
 
     const manifests: readonly { path: string; manifest: WorkspaceManifest }[] =
       WORKSPACE_PACKAGES.map((packageDirectory) => {
-        const packageJsonPath = join(
-          REPO_ROOT,
-          packageDirectory,
-          'package.json',
-        )
+        const packageJsonPath = join(REPO_ROOT, packageDirectory, "package.json");
         return {
           path: packageJsonPath,
-          manifest: JSON.parse(
-            readFileSync(packageJsonPath, 'utf8'),
-          ) as WorkspaceManifest,
-        }
-      })
+          manifest: JSON.parse(readFileSync(packageJsonPath, "utf8")) as WorkspaceManifest,
+        };
+      });
 
     const bundled = readdirSync(stagingDirectory)
-      .filter((file) => file.endsWith('.tgz'))
+      .filter((file) => file.endsWith(".tgz"))
       .reduce<readonly { name: string; version: string; sizeBytes: number }[]>(
         (accumulator, tarballFile) => {
-          const tarballBody = readFileSync(join(stagingDirectory, tarballFile))
+          const tarballBody = readFileSync(join(stagingDirectory, tarballFile));
           const matchedManifest = manifests.find(({ manifest }) =>
-            tarballFile.startsWith(
-              manifest.name.replace('@', '').replace('/', '-') + '-',
-            ),
-          )?.manifest
+            tarballFile.startsWith(manifest.name.replace("@", "").replace("/", "-") + "-"),
+          )?.manifest;
           if (!matchedManifest) {
-            console.warn(`skip ${tarballFile} — no matching workspace package`)
-            return accumulator
+            console.warn(`skip ${tarballFile} — no matching workspace package`);
+            return accumulator;
           }
-          const destination = join(
-            SNAPSHOT_ROOT,
-            matchedManifest.name,
-            '-',
-            tarballFile,
-          )
-          mkdirSync(resolve(destination, '..'), { recursive: true })
-          writeFileSync(destination, tarballBody)
-          console.log(`  bundled ${matchedManifest.name} → ${destination}`)
+          const destination = join(SNAPSHOT_ROOT, matchedManifest.name, "-", tarballFile);
+          mkdirSync(resolve(destination, ".."), { recursive: true });
+          writeFileSync(destination, tarballBody);
+          console.log(`  bundled ${matchedManifest.name} → ${destination}`);
           return [
             ...accumulator,
             {
@@ -109,25 +79,25 @@ const stageLocal = async (): Promise<void> => {
               version: matchedManifest.version,
               sizeBytes: tarballBody.length,
             },
-          ]
+          ];
         },
         [],
-      )
+      );
 
-    const manifestPath = join(APP_ROOT, 'src', 'snapshot-manifest.ts')
+    const manifestPath = join(APP_ROOT, "src", "snapshot-manifest.ts");
     const manifestSource =
       "// AUTO-GENERATED by scripts/stage-local.ts. Do not edit.\n" +
       "import type { PackageRow } from './landing.js'\n\n" +
       "export const SNAPSHOT_PACKAGES: readonly PackageRow[] = " +
       JSON.stringify(bundled, null, 2) +
-      ' as const\n'
-    writeFileSync(manifestPath, manifestSource)
+      " as const\n";
+    writeFileSync(manifestPath, manifestSource);
 
-    console.log(`\nstaged into ${SNAPSHOT_ROOT}`)
-    console.log('now run:  corepack pnpm dev:registry')
+    console.log(`\nstaged into ${SNAPSHOT_ROOT}`);
+    console.log("now run:  corepack pnpm dev:registry");
   } finally {
-    rmSync(stagingDirectory, { recursive: true, force: true })
+    rmSync(stagingDirectory, { recursive: true, force: true });
   }
-}
+};
 
-await stageLocal()
+await stageLocal();
