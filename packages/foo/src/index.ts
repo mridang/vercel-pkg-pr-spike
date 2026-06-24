@@ -7,4 +7,4 @@ export const PKG = "@mridang/foo" as const;
  * @param name - The greeted party. Inserted verbatim.
  * @returns The greeting string.
  */
-export const greet = (name: string): string => `hello, ${name} from foo`;
+export const greet = (name: string): string => `HEY ${name}! foo here.`;
