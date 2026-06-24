@@ -74,14 +74,19 @@ const extractManifestFromTarball = async (
     const parser = untar({
       filter: (path) => path === 'package/package.json',
       onentry: (entry) => {
+        // tar's ReadEntry is a Readable stream at runtime but its TS
+        // type omits the EventEmitter surface — cast to the standard
+        // node stream type so the build passes under stricter tsconfigs
+        // (eg the one @vercel/node applies to api/*.ts).
+        const stream = entry as unknown as NodeJS.ReadableStream
         const chunks: Buffer[] = []
-        entry.on('data', (chunk: Buffer) => chunks.push(chunk))
-        entry.on('end', () => {
+        stream.on('data', (chunk: Buffer) => chunks.push(chunk))
+        stream.on('end', () => {
           captured = JSON.parse(
             Buffer.concat(chunks).toString('utf8'),
           ) as PackageManifest
         })
-        entry.on('error', reject)
+        stream.on('error', reject)
       },
     })
     Readable.from(tarballBytes)
