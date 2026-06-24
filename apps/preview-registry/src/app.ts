@@ -51,18 +51,12 @@ export const createApp = (store: BlobStore) => {
     return context.body(ROBOTS_TXT)
   })
 
-  app.get('/diag-text', (context) => context.text('hello from /diag-text'))
-  app.get('/diag-html', (context) =>
-    context.html('<!doctype html><html><body>diag-html</body></html>'),
-  )
-  app.get('/diag-landing', (context) => {
+  app.get('/', (context) => {
     const origin = originForHost(context.req.header('host'))
     return context.html(
       renderLanding(SNAPSHOT_PACKAGES, origin, branchForDeploy()),
     )
   })
-
-  app.get('/', (context) => context.text('plain text from /'))
 
   app.get('/-/blob/*', async (context) => {
     const key = decodeURIComponent(
