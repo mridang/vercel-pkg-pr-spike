@@ -62,12 +62,7 @@ export const createApp = (store: BlobStore) => {
     )
   })
 
-  app.get('/', (context) => {
-    const origin = originForHost(context.req.header('host'))
-    return context.html(
-      renderLanding(SNAPSHOT_PACKAGES, origin, branchForDeploy()),
-    )
-  })
+  app.get('/', (context) => context.text('plain text from /'))
 
   app.get('/-/blob/*', async (context) => {
     const key = decodeURIComponent(
