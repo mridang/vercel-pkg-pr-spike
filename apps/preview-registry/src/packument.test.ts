@@ -80,29 +80,29 @@ const manifestTarball = (manifest: object): Buffer =>
 describe('buildPackument', () => {
   test('returns null when the store has no matching tarballs', async () => {
     const store = fakeStore([])
-    expect(await buildPackument(store, '@mridang', 'foo')).toBeNull()
+    expect(await buildPackument(store, '@foodbar', 'alpha')).toBeNull()
   })
 
   test('builds a packument with the latest dist-tag set to the newest blob', async () => {
     const older = manifestTarball({
-      name: '@mridang/foo',
+      name: '@foodbar/alpha',
       version: '0.0.0-sha-aaaaaaa',
     })
     const newer = manifestTarball({
-      name: '@mridang/foo',
+      name: '@foodbar/alpha',
       version: '0.0.0-sha-bbbbbbb',
     })
 
     const store = fakeStore([
       {
-        key: '@mridang/foo/-/older.tgz',
+        key: '@foodbar/alpha/-/older.tgz',
         url: 'https://example.test/-/blob/older',
         size: older.length,
         uploadedAt: new Date('2026-06-23T00:00:00Z'),
         body: older,
       },
       {
-        key: '@mridang/foo/-/newer.tgz',
+        key: '@foodbar/alpha/-/newer.tgz',
         url: 'https://example.test/-/blob/newer',
         size: newer.length,
         uploadedAt: new Date('2026-06-24T00:00:00Z'),
@@ -110,9 +110,9 @@ describe('buildPackument', () => {
       },
     ])
 
-    const packument = await buildPackument(store, '@mridang', 'foo')
+    const packument = await buildPackument(store, '@foodbar', 'alpha')
     expect(packument).not.toBeNull()
-    expect(packument?.name).toBe('@mridang/foo')
+    expect(packument?.name).toBe('@foodbar/alpha')
     expect(packument?.['dist-tags'].latest).toBe('0.0.0-sha-bbbbbbb')
     expect(Object.keys(packument?.versions ?? {}).sort()).toEqual([
       '0.0.0-sha-aaaaaaa',
@@ -122,12 +122,12 @@ describe('buildPackument', () => {
 
   test('attaches dist.tarball, shasum, integrity, and unpackedSize to every version', async () => {
     const body = manifestTarball({
-      name: '@mridang/foo',
+      name: '@foodbar/alpha',
       version: '0.0.0-sha-onlyone',
     })
     const store = fakeStore([
       {
-        key: '@mridang/foo/-/only.tgz',
+        key: '@foodbar/alpha/-/only.tgz',
         url: 'https://example.test/-/blob/only',
         size: body.length,
         uploadedAt: new Date('2026-06-24T00:00:00Z'),
@@ -135,7 +135,7 @@ describe('buildPackument', () => {
       },
     ])
 
-    const packument = await buildPackument(store, '@mridang', 'foo')
+    const packument = await buildPackument(store, '@foodbar', 'alpha')
     const version = packument?.versions['0.0.0-sha-onlyone']
     expect(version?.dist.tarball).toBe('https://example.test/-/blob/only')
     expect(version?.dist.shasum).toMatch(/^[0-9a-f]{40}$/)
@@ -145,26 +145,26 @@ describe('buildPackument', () => {
 
   test('skips non-tarball blobs that share the package prefix', async () => {
     const body = manifestTarball({
-      name: '@mridang/foo',
+      name: '@foodbar/alpha',
       version: '0.0.0-sha-good',
     })
     const store = fakeStore([
       {
-        key: '@mridang/foo/-/good.tgz',
+        key: '@foodbar/alpha/-/good.tgz',
         url: 'https://example.test/-/blob/good',
         size: body.length,
         uploadedAt: new Date(),
         body,
       },
       {
-        key: '@mridang/foo/-/junk.txt',
+        key: '@foodbar/alpha/-/junk.txt',
         url: 'https://example.test/-/blob/junk',
         size: 0,
         uploadedAt: new Date(),
         body: Buffer.alloc(0),
       },
     ])
-    const packument = await buildPackument(store, '@mridang', 'foo')
+    const packument = await buildPackument(store, '@foodbar', 'alpha')
     expect(Object.keys(packument?.versions ?? {})).toEqual([
       '0.0.0-sha-good',
     ])

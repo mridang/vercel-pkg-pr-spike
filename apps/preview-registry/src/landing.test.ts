@@ -8,8 +8,8 @@ import {
 import type { BlobEntry } from './storage.js'
 
 const blob = (overrides: Partial<BlobEntry>): BlobEntry => ({
-  key: '@mridang/foo/-/mridang-foo-0.0.0-sha-abc1234.tgz',
-  url: 'https://example.test/-/blob/foo',
+  key: '@foodbar/alpha/-/foodbar-alpha-0.0.0-sha-abc1234.tgz',
+  url: 'https://example.test/-/blob/alpha',
   size: 1024,
   uploadedAt: new Date('2026-06-24T00:00:00Z'),
   ...overrides,
@@ -19,42 +19,36 @@ describe('collectPackages', () => {
   test('parses scope, name, version, and size from each tarball blob', () => {
     const rows = collectPackages([
       blob({
-        key: '@mridang/foo/-/mridang-foo-0.0.0-sha-abc1234.tgz',
+        key: '@foodbar/alpha/-/foodbar-alpha-0.0.0-sha-abc1234.tgz',
         size: 708,
       }),
     ])
     expect(rows).toEqual<readonly PackageRow[]>([
-      { name: '@mridang/foo', version: '0.0.0-sha-abc1234', sizeBytes: 708 },
+      { name: '@foodbar/alpha', version: '0.0.0-sha-abc1234', sizeBytes: 708 },
     ])
   })
 
   test('sorts the result alphabetically by package name', () => {
     const rows = collectPackages([
-      blob({
-        key: '@mridang/zoo/-/mridang-zoo-0.0.0-sha-x.tgz',
-      }),
-      blob({
-        key: '@mridang/apple/-/mridang-apple-0.0.0-sha-x.tgz',
-      }),
-      blob({
-        key: '@mridang/middle/-/mridang-middle-0.0.0-sha-x.tgz',
-      }),
+      blob({ key: '@foodbar/zulu/-/foodbar-zulu-0.0.0-sha-x.tgz' }),
+      blob({ key: '@foodbar/alpha/-/foodbar-alpha-0.0.0-sha-x.tgz' }),
+      blob({ key: '@foodbar/mike/-/foodbar-mike-0.0.0-sha-x.tgz' }),
     ])
     expect(rows.map((row) => row.name)).toEqual([
-      '@mridang/apple',
-      '@mridang/middle',
-      '@mridang/zoo',
+      '@foodbar/alpha',
+      '@foodbar/mike',
+      '@foodbar/zulu',
     ])
   })
 
   test('deduplicates by package name (first blob wins)', () => {
     const rows = collectPackages([
       blob({
-        key: '@mridang/foo/-/mridang-foo-0.0.0-sha-aaaaaaa.tgz',
+        key: '@foodbar/alpha/-/foodbar-alpha-0.0.0-sha-aaaaaaa.tgz',
         size: 100,
       }),
       blob({
-        key: '@mridang/foo/-/mridang-foo-0.0.0-sha-bbbbbbb.tgz',
+        key: '@foodbar/alpha/-/foodbar-alpha-0.0.0-sha-bbbbbbb.tgz',
         size: 200,
       }),
     ])
@@ -65,12 +59,10 @@ describe('collectPackages', () => {
   test('ignores blobs that do not match the expected tarball shape', () => {
     const rows = collectPackages([
       blob({ key: 'not-a-package.txt' }),
-      blob({ key: '@mridang/foo/-/garbage' }),
-      blob({
-        key: '@mridang/foo/-/mridang-foo-0.0.0-sha-ok.tgz',
-      }),
+      blob({ key: '@foodbar/alpha/-/garbage' }),
+      blob({ key: '@foodbar/alpha/-/foodbar-alpha-0.0.0-sha-ok.tgz' }),
     ])
-    expect(rows.map((row) => row.name)).toEqual(['@mridang/foo'])
+    expect(rows.map((row) => row.name)).toEqual(['@foodbar/alpha'])
   })
 
   test('returns an empty list when no blobs match', () => {
@@ -79,7 +71,7 @@ describe('collectPackages', () => {
 
   test('falls back to "unknown" when the filename does not carry a version', () => {
     const rows = collectPackages([
-      blob({ key: '@mridang/foo/-/totally-unrelated.tgz' }),
+      blob({ key: '@foodbar/alpha/-/totally-unrelated.tgz' }),
     ])
     expect(rows[0]?.version).toBe('unknown')
   })
@@ -87,8 +79,8 @@ describe('collectPackages', () => {
 
 describe('renderLanding', () => {
   const samplePackages: readonly PackageRow[] = [
-    { name: '@mridang/foo', version: '0.0.0-sha-abc', sizeBytes: 800 },
-    { name: '@mridang/bar', version: '0.0.0-sha-abc', sizeBytes: 1024 },
+    { name: '@foodbar/alpha', version: '0.0.0-sha-abc', sizeBytes: 800 },
+    { name: '@foodbar/bravo', version: '0.0.0-sha-abc', sizeBytes: 1024 },
   ]
 
   test('embeds the deploy origin and branch into the HTML output', () => {
@@ -112,33 +104,43 @@ describe('renderLanding', () => {
     expect(html).toMatch(/<meta name="googlebot"[^>]*noindex/i)
   })
 
-  test('renders each package row with its version and size', () => {
+  test('lists every package by name and version', () => {
     const html = renderLanding(
       samplePackages,
       'https://my-deploy.vercel.app',
       'main',
     )
-    expect(html).toContain('@mridang/foo')
-    expect(html).toContain('@mridang/bar')
+    expect(html).toContain('@foodbar/alpha')
+    expect(html).toContain('@foodbar/bravo')
     expect(html).toContain('0.0.0-sha-abc')
-    expect(html).toContain('1.0 KB')
   })
 
-  test('builds the install command from the package list', () => {
-    const html = renderLanding(
-      samplePackages,
-      'https://x.test',
-      'main',
-    )
+  test('shows install command for a single example package, not all of them', () => {
+    const html = renderLanding(samplePackages, 'https://x.test', 'main')
     expect(html).toContain(
-      'npm install @mridang/foo@0.0.0-sha-abc @mridang/bar@0.0.0-sha-abc --registry=https://x.test',
+      'npm install @foodbar/alpha@0.0.0-sha-abc --registry=https://x.test',
+    )
+    expect(html).not.toContain(
+      'npm install @foodbar/alpha@0.0.0-sha-abc @foodbar/bravo',
     )
   })
 
-  test('uses a placeholder example install command when no packages exist', () => {
+  test('derives the scope for the .npmrc snippet from the first package', () => {
+    const html = renderLanding(samplePackages, 'https://x.test', 'main')
+    expect(html).toContain('@foodbar:registry=https://x.test')
+  })
+
+  test('omits the install section entirely when no packages are bundled', () => {
     const html = renderLanding([], 'https://x.test', 'main')
-    expect(html).toContain('npm install @mridang/foo --registry=https://x.test')
+    expect(html).not.toContain('npm install')
+    expect(html).not.toContain(':registry=')
     expect(html).toContain('No snapshots in this deploy yet.')
+  })
+
+  test('declares dark-mode classes so the visitor preference takes effect automatically', () => {
+    const html = renderLanding(samplePackages, 'https://x.test', 'main')
+    expect(html).toContain('dark:bg-slate-950')
+    expect(html).toContain('dark:text-slate-100')
   })
 
   test('escapes HTML-special characters in branch names so injection is impossible', () => {

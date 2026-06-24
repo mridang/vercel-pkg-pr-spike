@@ -20,13 +20,15 @@ describe('createFsStore', () => {
   test('put writes the body to disk under the given key', async () => {
     const store = createFsStore(storeRoot, publicBase)
     const entry = await store.put(
-      '@mridang/foo/-/mridang-foo-1.tgz',
+      '@foodbar/alpha/-/foodbar-alpha-1.tgz',
       Buffer.from('tarball-bytes'),
       'application/octet-stream',
     )
-    expect(entry.key).toBe('@mridang/foo/-/mridang-foo-1.tgz')
+    expect(entry.key).toBe('@foodbar/alpha/-/foodbar-alpha-1.tgz')
     expect(entry.size).toBe('tarball-bytes'.length)
-    const roundTrip = await store.read('@mridang/foo/-/mridang-foo-1.tgz')
+    const roundTrip = await store.read(
+      '@foodbar/alpha/-/foodbar-alpha-1.tgz',
+    )
     expect(roundTrip.toString('utf8')).toBe('tarball-bytes')
   })
 
@@ -45,24 +47,24 @@ describe('createFsStore', () => {
   test('list returns every entry whose key matches the prefix', async () => {
     const store = createFsStore(storeRoot, publicBase)
     await store.put(
-      '@a/x/-/a-x.tgz',
+      '@scope-a/x/-/a-x.tgz',
       Buffer.from('1'),
       'application/octet-stream',
     )
     await store.put(
-      '@a/y/-/a-y.tgz',
+      '@scope-a/y/-/a-y.tgz',
       Buffer.from('22'),
       'application/octet-stream',
     )
     await store.put(
-      '@b/z/-/b-z.tgz',
+      '@scope-b/z/-/b-z.tgz',
       Buffer.from('333'),
       'application/octet-stream',
     )
-    const inA = await store.list('@a/')
+    const inA = await store.list('@scope-a/')
     expect(inA.map((entry) => entry.key).sort()).toEqual([
-      '@a/x/-/a-x.tgz',
-      '@a/y/-/a-y.tgz',
+      '@scope-a/x/-/a-x.tgz',
+      '@scope-a/y/-/a-y.tgz',
     ])
     const all = await store.list('')
     expect(all).toHaveLength(3)
