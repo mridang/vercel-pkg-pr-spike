@@ -27,20 +27,40 @@ const packageDirs = readdirSync(join(REPO, 'packages'))
     }
   })
 
+// Store each modified file's full original content so we can restore it
+// verbatim afterward — both the version bump AND the workspace:* rewrites.
 const stampedOriginals = new Map<string, string>()
+const DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const
+
 const stamp = (dir: string): string => {
   const pkgPath = join(REPO, dir, 'package.json')
-  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
-  stampedOriginals.set(pkgPath, pkg.version)
+  const original = readFileSync(pkgPath, 'utf8')
+  stampedOriginals.set(pkgPath, original)
+
+  const pkg = JSON.parse(original) as Record<string, unknown> & { name: string; version: string }
   pkg.version = snapshotVersion
+
+  // pnpm pack resolves workspace:* from the lockfile snapshot (which still
+  // has 0.0.0), not from our in-flight stamp on disk. Rewrite the dep
+  // string to the literal snapshot version so the published tarball
+  // resolves correctly when an external consumer installs it.
+  for (const field of DEP_FIELDS) {
+    const deps = pkg[field] as Record<string, string> | undefined
+    if (!deps) continue
+    for (const [name, value] of Object.entries(deps)) {
+      if (typeof value === 'string' && value.startsWith('workspace:')) {
+        deps[name] = snapshotVersion
+      }
+    }
+  }
+
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
   return pkg.name
 }
+
 const restoreAll = (): void => {
-  for (const [path, version] of stampedOriginals) {
-    const pkg = JSON.parse(readFileSync(path, 'utf8'))
-    pkg.version = version
-    writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n')
+  for (const [path, content] of stampedOriginals) {
+    writeFileSync(path, content)
   }
 }
 
