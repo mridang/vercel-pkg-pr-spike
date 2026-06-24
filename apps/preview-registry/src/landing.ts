@@ -131,6 +131,7 @@ export const renderLanding = (
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
 <meta name="googlebot" content="noindex, nofollow, noarchive">
 <meta name="referrer" content="no-referrer">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>per-PR npm registry · ${escapeHtml(branch)}</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <style>

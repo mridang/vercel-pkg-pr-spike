@@ -143,6 +143,11 @@ describe('renderLanding', () => {
     expect(html).toContain('dark:text-slate-100')
   })
 
+  test('declares a favicon link so browsers stop falling back to /favicon.ico', () => {
+    const html = renderLanding(samplePackages, 'https://x.test', 'main')
+    expect(html).toMatch(/<link[^>]*rel="icon"[^>]*href="\/favicon\.svg"/)
+  })
+
   test('escapes HTML-special characters in branch names so injection is impossible', () => {
     const html = renderLanding(
       samplePackages,
