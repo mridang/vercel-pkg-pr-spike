@@ -5,7 +5,6 @@
 
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { handle } from 'hono/vercel'
 import { createApp } from '../src/app.js'
 import { createFsStore } from '../src/storage.js'
 
@@ -32,4 +31,12 @@ const PUBLIC_BASE = process.env.VERCEL_URL
 
 const app = createApp(createFsStore(SNAPSHOT_ROOT, PUBLIC_BASE))
 
-export default handle(app)
+// Vercel's @vercel/node runtime expects either the classic
+// (req, res) => void signature on the default export, or a Web Fetch
+// handler exported under a recognised name (`fetch`, `GET`, `POST`, ...).
+// Hono is a Fetch-style app, so we expose app.fetch as named exports for
+// every HTTP method the registry serves.
+export const fetch = app.fetch
+export const GET = app.fetch
+export const HEAD = app.fetch
+export const OPTIONS = app.fetch
