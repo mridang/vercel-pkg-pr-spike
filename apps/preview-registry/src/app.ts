@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
-import { collectPackages, renderLanding, ROBOTS_TXT } from './landing.js'
+import { renderLanding, ROBOTS_TXT } from './landing.js'
 import { buildPackument } from './packument.js'
+import { SNAPSHOT_PACKAGES } from './snapshot-manifest.js'
 import type { BlobStore } from './storage.js'
 
 /**
@@ -50,12 +51,12 @@ export const createApp = (store: BlobStore) => {
     return context.body(ROBOTS_TXT)
   })
 
-  app.get('/', async (context) => {
-    const blobs = await store.list('')
-    const packages = collectPackages(blobs)
+  app.get('/', (context) => {
     const origin = originForHost(context.req.header('host'))
     context.header('Content-Type', 'text/html; charset=utf-8')
-    return context.html(renderLanding(packages, origin, branchForDeploy()))
+    return context.html(
+      renderLanding(SNAPSHOT_PACKAGES, origin, branchForDeploy()),
+    )
   })
 
   app.get('/-/blob/*', async (context) => {
