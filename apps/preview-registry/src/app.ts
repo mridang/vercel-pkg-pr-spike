@@ -4,16 +4,36 @@
 // environments. Each deploy serves only its own deploy's snapshots.
 
 import { Hono } from 'hono'
+import { collectPackages, renderLanding } from './landing.js'
 import { buildPackument } from './packument.js'
 import type { BlobStore } from './storage.js'
 
 export const createApp = (store: BlobStore) => {
   const app = new Hono()
 
-  app.get('/', (c) =>
-    c.json({ ok: true, registry: '@mridang/preview-registry-spike' }),
-  )
   app.get('/-/ping', (c) => c.text('OK'))
+
+  // Landing page. Lists every package the current snapshot bundle ships
+  // with copy-pasteable install commands for this deploy's URL. The
+  // origin comes from the Host header so the displayed install command
+  // matches whichever preview-deploy URL the visitor opened.
+  app.get('/', async (c) => {
+    const blobs = await store.list('')
+    const packages = collectPackages(blobs)
+    const host = c.req.header('host') ?? 'localhost'
+    const origin = `${host.startsWith('localhost') ? 'http' : 'https'}://${host}`
+    const branch = process.env.VERCEL_GIT_COMMIT_REF ?? 'local'
+    c.header('Content-Type', 'text/html; charset=utf-8')
+    return c.html(renderLanding(packages, origin, branch))
+  })
+
+  // Catch-all so we never bubble an uncaught route mismatch back to
+  // Vercel's runtime (which would surface as FUNCTION_INVOCATION_FAILED
+  // instead of a clean 404). Same applies to handler exceptions.
+  app.notFound((c) => c.json({ error: 'not found', path: c.req.path }, 404))
+  app.onError((err, c) =>
+    c.json({ error: err.message, path: c.req.path, stack: err.stack }, 500),
+  )
 
   // Tarball serving. In every environment we read from the same FS-backed
   // store. On Vercel the store is rooted in the function bundle (snapshots
