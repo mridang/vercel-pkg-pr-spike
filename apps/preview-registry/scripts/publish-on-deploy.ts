@@ -177,8 +177,12 @@ const publishOnDeploy = async (): Promise<void> => {
 
     const publicDirectory = join(APP_ROOT, 'public')
     mkdirSync(publicDirectory, { recursive: true })
-    const origin = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
+    const canonicalHost =
+      process.env.VERCEL_BRANCH_URL ??
+      process.env.VERCEL_PROJECT_PRODUCTION_URL ??
+      process.env.VERCEL_URL
+    const origin = canonicalHost
+      ? `https://${canonicalHost}`
       : 'http://localhost:3000'
     const branch = process.env.VERCEL_GIT_COMMIT_REF ?? 'main'
     writeFileSync(
