@@ -177,10 +177,10 @@ const publishOnDeploy = async (): Promise<void> => {
 
     const publicDirectory = join(APP_ROOT, 'public')
     mkdirSync(publicDirectory, { recursive: true })
-    const canonicalHost =
-      process.env.VERCEL_BRANCH_URL ??
-      process.env.VERCEL_PROJECT_PRODUCTION_URL ??
-      process.env.VERCEL_URL
+    const isProduction = process.env.VERCEL_ENV === 'production'
+    const canonicalHost = isProduction
+      ? process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL
+      : process.env.VERCEL_BRANCH_URL ?? process.env.VERCEL_URL
     const origin = canonicalHost
       ? `https://${canonicalHost}`
       : 'http://localhost:3000'
