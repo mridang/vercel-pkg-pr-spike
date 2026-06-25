@@ -116,7 +116,7 @@ const stageLocal = async (): Promise<void> => {
     writeFileSync(manifestPath, manifestSource);
 
     console.log(`\nstaged into ${SNAPSHOT_ROOT}`);
-    console.log("now run:  corepack pnpm dev");
+    console.log("now run:  corepack pnpm --filter @mridang/preview-registry dev");
   } finally {
     rmSync(stagingDirectory, { recursive: true, force: true });
   }
