@@ -7,7 +7,8 @@ import { renderLanding } from "../src/landing.js";
 
 /**
  * Dependency field names a workspace package may declare a sibling
- * package under. All of these get rewritten from `workspace:*` to the
+ * package under. Any `workspace:` protocol value in these fields (eg
+ * `workspace:*`, `workspace:^`, `workspace:~`) is rewritten to the
  * concrete snapshot version during the publish pass.
  */
 const DEPENDENCY_FIELDS = [
@@ -45,6 +46,7 @@ interface StampedPackage {
 interface MutablePackageJson {
   name: string;
   version: string;
+  private?: boolean;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
@@ -53,18 +55,25 @@ interface MutablePackageJson {
 }
 
 /**
- * Discover every workspace package directory under `packages/`.
+ * Discover every workspace package directory under `packages/` that is
+ * suitable to publish to the preview registry.
  *
- * Filters out anything that isn't actually a package (no
- * `package.json`) so stray files or symlinks don't break the pack
- * loop.
+ * Skips directories that are not real packages (missing
+ * `package.json`) and packages flagged `private: true` — those exist
+ * only for internal workspace consumption and would refuse to publish
+ * to a real npm registry anyway.
  */
 const listPackageDirectories = (): readonly string[] =>
   readdirSync(join(REPO_ROOT, "packages"))
     .map((entry) => `packages/${entry}`)
     .filter((path) => {
       try {
-        return readdirSync(join(REPO_ROOT, path)).includes("package.json");
+        const packageJsonPath = join(REPO_ROOT, path, "package.json");
+        if (!readdirSync(join(REPO_ROOT, path)).includes("package.json")) {
+          return false;
+        }
+        const manifest = JSON.parse(readFileSync(packageJsonPath, "utf8")) as MutablePackageJson;
+        return manifest.private !== true;
       } catch {
         return false;
       }
@@ -72,8 +81,9 @@ const listPackageDirectories = (): readonly string[] =>
 
 /**
  * Rewrite a single `package.json` in place: bump its version to the
- * deploy's snapshot version and replace every `workspace:*` style
- * dependency value with the same snapshot version.
+ * deploy's snapshot version and replace every `workspace:` protocol
+ * dependency value (`workspace:*`, `workspace:^`, `workspace:~`, …)
+ * with the same snapshot version.
  *
  * Returns a {@link StampedPackage} containing the file's original
  * content so {@link restoreOriginals} can put it back afterwards.
