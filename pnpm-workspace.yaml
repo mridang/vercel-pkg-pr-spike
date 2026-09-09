@@ -14,7 +14,7 @@ catalog:
   eslint-plugin-import: ^2.31.0
   eslint-plugin-perfectionist: ^4.0.0
   eslint-plugin-prettier: ^5.0.0
-  hono: ^4.12.25
+  hono: ^4.13.5
   prettier: ^3.0.0
   tar: ^7.4.3
   tsx: ^4.21.0
